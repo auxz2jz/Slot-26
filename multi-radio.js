@@ -3,12 +3,11 @@ import {
   roomLink, leaderId, guestId, validGuestId, validMemberId, normalizeChannels,
   validPin, deriveProtectedRoomId
 } from './room-utils.mjs';
+import {CHANNEL_PRESETS,MAX_SELECTED_CHANNELS,checkChannelPin} from './channel-presets.mjs';
 
 const $ = id => document.getElementById(id);
 const ui = {
   list:$('channelList'), name:$('displayName'), colors:$('colors'),
-  newName:$('newChannel'), create:$('createChannel'), requirePin:$('requirePin'),
-  newPin:$('newPin'), newPinBox:$('newPinBox'),
   txTone:$('txTone'), rxTone:$('rxTone'), alertTone:$('alertTone'),
   message:$('channelMessage'), error:$('errorMessage'), count:$('joinCount'),
   restore:$('restoreChannels'), monitorAll:$('monitorAll'), muteAll:$('muteAll'), enableSpeakers:$('enableSpeakers'),
@@ -17,10 +16,9 @@ const ui = {
   audio:$('remoteAudio')
 };
 const PROFILE_KEY='relay-one.profile.v4';
-const CHANNEL_KEY='relay-one.channels.v4';
 const MONITOR_KEY='relay-one.monitor.v5';
 const ACTIVE_KEY='relay-one.joined.v5';
-const MAX_ACTIVE=5, PING_EVERY=5000, STALE_AFTER=40000, PENDING_AFTER=10000;
+const MAX_ACTIVE=MAX_SELECTED_CHANNELS, PING_EVERY=5000, STALE_AFTER=40000, PENDING_AFTER=10000;
 const storeGet=(key,defaultValue)=>{try{return JSON.parse(localStorage.getItem(key))??defaultValue;}catch{return defaultValue;}};
 const storeSet=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{}};
 const rawProfile=storeGet(PROFILE_KEY,{});
@@ -31,9 +29,10 @@ const profile={
   rxTone:rawProfile?.rxTone!==false,
   alertTone:rawProfile?.alertTone!==false
 };
-let channels=normalizeChannels(storeGet(CHANNEL_KEY,[]));
+const channels=CHANNEL_PRESETS; // All visitors see the same ten read-only channels.
+const channelIds=new Set(channels.map(c=>c.id));
 const monitorPrefs=storeGet(MONITOR_KEY,{});
-const desiredJoined=new Set(storeGet(ACTIVE_KEY,[]).filter(id=>validRoom(id)));
+const desiredJoined=new Set((Array.isArray(storeGet(ACTIVE_KEY,[]))?storeGet(ACTIVE_KEY,[]):[]).filter(id=>channelIds.has(id)));
 const pinCache=new Map(); // Volatile only: never persisted to localStorage or links.
 const sessions=new Map(); // public channel ID -> independent ChannelSession
 const rows=new Map();
@@ -62,25 +61,13 @@ function playTone(kind){
     }
   }catch(err){console.warn('Sound playback unavailable',err);}
 }
-function saveChannels(){storeSet(CHANNEL_KEY,channels);}
 function persistDesired(){storeSet(ACTIVE_KEY,[...desiredJoined]);}
 function persistMonitors(){storeSet(MONITOR_KEY,monitorPrefs);}
 function reportError(message){ui.error.textContent=message;ui.error.classList.remove('hidden');}
 function clearError(){ui.error.textContent='';ui.error.classList.add('hidden');}
 function setMessage(text){ui.message.textContent=text;}
 function storedRoom(id){return channels.find(c=>c.id===id);}
-function invite(c){return roomLink(location.href,c.id,c.title,c.secure===true);}
-async function copyInvite(c){
-  try{await navigator.clipboard.writeText(invite(c));setMessage('Link copied for '+c.title+'. You can reuse it any time. Share the PIN separately.');}
-  catch{window.prompt('Copy this link for '+c.title+':',invite(c));}
-}
 function getProfile(){profile.name=cleanName(ui.name.value);ui.name.value=profile.name;storeSet(PROFILE_KEY,profile);}
-function rememberRoom(id,title,secure=false){
-  const existing=storedRoom(id);
-  if(existing){if(secure && !existing.secure){existing.secure=true;saveChannels();}return existing;}
-  const item={id,title:cleanTitle(title),secure:secure===true};
-  channels.unshift(item);channels=channels.slice(0,30);saveChannels();return item;
-}
 function monitorValue(id){return monitorPrefs[id]!==false;}
 function setMonitor(id,enabled){
   monitorPrefs[id]=!!enabled;persistMonitors();
@@ -104,24 +91,7 @@ ui.txTone.checked=profile.txTone;ui.rxTone.checked=profile.rxTone;ui.alertTone.c
 ui.txTone.addEventListener('change',()=>{profile.txTone=ui.txTone.checked;storeProfile();});
 ui.rxTone.addEventListener('change',()=>{profile.rxTone=ui.rxTone.checked;storeProfile();});
 ui.alertTone.addEventListener('change',()=>{profile.alertTone=ui.alertTone.checked;storeProfile();});
-ui.requirePin.addEventListener('change',()=>ui.newPinBox.classList.toggle('hidden',!ui.requirePin.checked));
-ui.create.addEventListener('click',()=>{
-  const name=cleanTitle(ui.newName.value||'New channel'),secure=ui.requirePin.checked,pin=ui.newPin.value.trim();
-  if(secure && !validPin(pin)){setMessage('Enter a numeric PIN with 4–12 digits.');return;}
-  const c=rememberRoom(newRoom(),name,secure);
-  if(secure)pinCache.set(c.id,pin);
-  ui.newName.value='';ui.newPin.value='';ui.requirePin.checked=false;ui.newPinBox.classList.add('hidden');
-  drawRows();setMessage('Created '+name+'. Copy its reusable Link once, then Join when you want it active.');
-});
-ui.newName.addEventListener('keydown',e=>{if(e.key==='Enter')ui.create.click();});
-const query=new URLSearchParams(location.search);
-if(query.has('room')){
-  const id=query.get('room');
-  if(validRoom(id)){const room=rememberRoom(id,query.get('channel')||'Shared channel',query.get('secure')==='1');setMessage('Saved invitation for '+room.title+'. Tap Join here; its link can be reused.');}
-  else reportError('Invalid channel invitation.');
-}
-// Clean shared URLs so accidentally copying the address bar does not expose a stale invite.
-if(query.has('room'))history.replaceState(null,'',location.pathname);
+// Fixed radio plan: ordinary users cannot create channels, modify PINs, or view admin settings.
 
 async function ensureMicrophone(){
   if(microphone && microphone.getAudioTracks()[0]?.readyState==='live')return microphone;
@@ -144,7 +114,7 @@ function releaseMicrophoneIfUnused(){
 }
 function leaveAll(){for(const s of [...sessions.values()])leaveChannel(s.publicId);}
 async function joinChannel(c){
-  if(!c || sessions.has(c.id))return;
+  if(!c || !channelIds.has(c.id) || sessions.has(c.id))return;
   if(sessions.size+joinInProgress>=MAX_ACTIVE){setMessage('Limit: '+MAX_ACTIVE+' simultaneous joined channels on this browser.');return;}
   if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || typeof window.Peer!=='function'){
     reportError('This radio requires HTTPS, microphone permission, and PeerJS connectivity.');return;
@@ -159,9 +129,18 @@ async function joinChannel(c){
       if(!validPin(pin)){setMessage('Incorrect PIN format: 4–12 digits are required.');return;}
     }
   }
-  unlockSound();getProfile();clearError();joinInProgress++;setMessage('Joining '+c.title+'…');
+  unlockSound();getProfile();clearError();joinInProgress++;setMessage('Checking access to '+c.title+'…');
   try{
-    if(c.secure){roomId=await deriveProtectedRoomId(c.id,pin);pinCache.set(c.id,pin);}
+    if(c.secure){
+      const permitted=await checkChannelPin(c,pin);
+      if(!permitted){
+        pinCache.delete(c.id);
+        setMessage('Incorrect PIN for '+c.title+'. Channel not joined.');
+        return;
+      }
+      roomId=await deriveProtectedRoomId(c.id,pin);
+      pinCache.set(c.id,pin);
+    }
     if(sessions.has(c.id))return;
     const mic=await ensureMicrophone();
     if(sessions.size>=MAX_ACTIVE)return;
@@ -615,58 +594,52 @@ function drawRows(){
     const box=document.createElement('article');box.className='multi-channel';box.dataset.id=c.id;
     const head=stableText(box,'div','','group-head');
     const titleBlock=stableText(head,'div','','group-name-block');
-    stableText(titleBlock,'div',c.title,'group-title');
-    const sub=stableText(titleBlock,'div',c.secure?'PIN protected • reusable link':'Reusable invitation link','group-subtitle');
+    const checkLabel=stableText(titleBlock,'label','','channel-select-label');
+    const select=document.createElement('input');select.type='checkbox';
+    select.setAttribute('aria-label','Join '+c.title);
+    checkLabel.appendChild(select);
+    stableText(checkLabel,'strong',c.title,'group-title');
+    stableText(titleBlock,'div',c.secure?'PIN required • private channel':'Open radio channel','group-subtitle');
     const status=stableText(head,'span','Not joined','group-status');
     const signal=stableText(box,'div','','group-signal');
-    const speaker=stableText(signal,'div','Not monitoring','on-air');
-    const count=stableText(signal,'span','0 / '+MAX_PEOPLE,'group-count');
+    const speaker=stableText(signal,'div','Join to see channel activity','on-air');
+    const count=stableText(signal,'span','—','group-count');
     const actions=stableText(box,'div','','group-action-row');
-    const join=stableText(actions,'button','Join','secondary');join.type='button';
     const focus=stableText(actions,'button','Focus','secondary');focus.type='button';
     const ptt=stableText(actions,'button','Hold Talk','small-ptt');ptt.type='button';ptt.disabled=true;
     const call=stableText(actions,'button','Call','secondary');call.type='button';call.disabled=true;
     const extra=stableText(box,'div','','group-extra');
     const monitorLabel=stableText(extra,'label','','monitor-label');
     const monitor=document.createElement('input');monitor.type='checkbox';monitor.checked=monitorValue(c.id);
+    monitor.setAttribute('aria-label','Monitor '+c.title);
     monitorLabel.appendChild(monitor);stableText(monitorLabel,'span','Monitor sound','');
-    const link=stableText(extra,'button','Copy link','');link.type='button';
-    const lock=stableText(extra,'button',c.secure?'PIN on':'Set PIN','');lock.type='button';lock.disabled=!!c.secure;
-    const forget=stableText(extra,'button','Forget','');forget.type='button';
     const people=stableText(box,'div','','group-people');
     const msg=stableText(box,'p','','group-msg');
-    rows.set(c.id,{box,status,speaker,count,join,focus,ptt,call,monitor,link,lock,forget,people,msg});
-    join.addEventListener('click',()=>sessions.has(c.id)?leaveChannel(c.id):joinChannel(c));
-    focus.addEventListener('click',()=>{focusedId=c.id;updateAll();});
+    rows.set(c.id,{box,status,speaker,count,select,focus,ptt,call,monitor,people,msg});
+    select.addEventListener('change',async()=>{
+      if(select.checked){
+        await joinChannel(c);
+      }else{
+        if(sessions.has(c.id))leaveChannel(c.id);
+        else{desiredJoined.delete(c.id);persistDesired();}
+      }
+      updateRow(c.id);updateQuick();
+    });
+    focus.addEventListener('click',()=>{if(sessions.has(c.id)){focusedId=c.id;updateAll();}});
     bindHold(ptt,()=>sessions.get(c.id));
-    monitor.addEventListener('change',()=>setMonitor(c.id,monitor.checked));
-    link.addEventListener('click',()=>copyInvite(c));
-    lock.addEventListener('click',()=>{
-      if(c.secure)return;
-      const pin=window.prompt('Choose a 4–12 digit PIN for '+c.title+'. Tell members separately from the new link.');
-      if(pin===null)return;
-      if(!validPin(pin.trim())){setMessage('PIN must have 4–12 numeric digits.');return;}
-      if(sessions.has(c.id)){setMessage('Leave '+c.title+' before changing its PIN.');return;}
-      c.secure=true;pinCache.set(c.id,pin.trim());saveChannels();drawRows();
-      setMessage(c.title+' is now PIN-protected. Share the updated invite link and PIN separately. Old unprotected sessions cannot join the new namespace.');
+    monitor.addEventListener('change',()=>{
+      if(!sessions.has(c.id)){monitor.checked=false;return;}
+      setMonitor(c.id,monitor.checked);
     });
     call.addEventListener('click',()=>{
       const s=sessions.get(c.id);if(!s?.ready())return;
       s.broadcast({type:'call'});
-      s.note='Call alert sent to '+c.title;
-      setMessage('Call sent to '+c.title+' only.');
+      s.note='Call alert sent on '+c.title;
+      setMessage('Call sent to members of '+c.title+' only.');
       updateRow(c.id);
-    });
-    forget.addEventListener('click',()=>{
-      if(sessions.has(c.id)){setMessage('Leave '+c.title+' first to forget it.');return;}
-      if(!window.confirm('Forget '+c.title+' from this device? This does not revoke its link.'))return;
-      channels=channels.filter(x=>x.id!==c.id);
-      delete monitorPrefs[c.id];pinCache.delete(c.id);desiredJoined.delete(c.id);
-      saveChannels();persistMonitors();persistDesired();drawRows();updateAll();
     });
     ui.list.appendChild(box);
   }
-  if(!channels.length)stableText(ui.list,'div','No saved channels. Create a channel below or open a reusable invitation link.','channel-empty');
   updateAll();
 }
 function updateRow(id){
@@ -676,10 +649,12 @@ function updateRow(id){
   r.box.classList.toggle('active',isActive);
   r.box.classList.toggle('focused',focus);
   r.box.classList.toggle('group-muted',isActive&&!s.monitor);
-  r.monitor.checked=monitorValue(id);
-  r.join.textContent=isActive?'Leave':'Join';
+  r.monitor.checked=isActive && monitorValue(id);
+  r.monitor.disabled=!isActive;
+  r.select.checked=isActive || desiredJoined.has(id);
+  r.select.disabled=false;
   r.focus.disabled=!isActive;r.focus.textContent=focus?'Selected':'Focus';
-  r.status.textContent=!isActive?'Not joined':s.ready()?'Connected':'Connecting';
+  r.status.textContent=!isActive?(desiredJoined.has(id)?'Selected • restore':'Not joined'):s.ready()?'Connected':'Connecting';
   r.status.className='group-status'+(isActive&&s.ready()?' online':isActive?' warning':'');
   const canSpeak=isActive&&s.ready()&&(!selectedTx||selectedTx===s)&&(!s.floor||s.floor===s.myId);
   r.ptt.disabled=!canSpeak;
@@ -696,9 +671,9 @@ function updateRow(id){
       tag.style.borderLeft='3px solid '+m.color;
     }
   }
-  r.msg.textContent=isActive?s.note:(storedRoom(id)?.secure?'PIN required when joining':'Reusable invitation');
+  r.msg.textContent=isActive?s.note:(desiredJoined.has(id)?'Selected from last session. Tap Restore selected to reconnect.':storedRoom(id)?.secure?'Enter PIN when joining. Only joined members see this channel.':'Select to join. Only joined members see activity.');
   if(focus)updateQuick();
-  ui.count.textContent=sessions.size+' / '+MAX_ACTIVE+' active';
+  ui.count.textContent=sessions.size+' / '+MAX_ACTIVE+' joined';
 }
 function updateQuick(){
   const s=sessions.get(focusedId);
