@@ -4,19 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#081824">
-<meta name="description" content="Relay One: ten shared radio channels with multi-channel monitoring and group-only push-to-talk.">
+<meta name="description" content="Relay One: Basic two-channel and Advanced ten-channel radio with group-only push-to-talk.">
 <title>Relay One — Shared Radio Channels</title>
 <link rel="stylesheet" href="./styles.css?v=4.1.0">
-<link rel="stylesheet" href="./multi.css?v=6.2.0">
+<link rel="stylesheet" href="./multi.css?v=6.3.0">
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
-<script type="module" src="./multi-radio.js?v=6.2.0"></script>
+<script type="module" src="./multi-radio.js?v=6.3.0"></script>
 </head>
 <body>
 <main class="app multi-app">
   <header class="masthead">
     <div class="brand-mark" aria-hidden="true">◉</div>
-    <div><p class="eyebrow">RELAY ONE / TEN-CHANNEL V6.2</p><h1>Group radio</h1></div>
-    <span class="version">10 channels</span>
+    <div><p class="eyebrow">RELAY ONE / RADIO V6.3</p><h1>Group radio</h1></div>
+    <span id="channelModeBadge" class="version">2 channels</span>
   </header>
 
   <section class="card" aria-label="User settings">
@@ -79,7 +79,14 @@
   <section class="card channel-overview" aria-label="Available radio channels">
     <div class="section-heading">
       <div><span class="micro-label">SHARED RADIO CHANNELS</span><h2>Choose your channels</h2></div>
-      <strong id="joinCount" class="counter">0 / 5 joined</strong>
+      <strong id="joinCount" class="counter">0 / 2 joined</strong>
+    </div>
+    <div class="radio-mode-picker" role="group" aria-label="Radio mode">
+      <div class="radio-mode-heading"><span class="micro-label">RADIO MODE</span><span class="small muted">Saved on this device</span></div>
+      <div class="radio-mode-buttons">
+        <button id="basicMode" type="button" class="secondary" aria-pressed="true"><strong>Basic</strong><span>Channels 01–02</span></button>
+        <button id="advancedMode" type="button" class="secondary" aria-pressed="false"><strong>Advanced</strong><span>All 10 channels</span></button>
+      </div>
     </div>
     <div class="layout-switcher" role="group" aria-label="Channel display density">
       <span class="micro-label">CHANNEL LAYOUT</span>
@@ -88,14 +95,14 @@
         <button id="detailedLayout" type="button" aria-pressed="false" class="secondary">Detailed</button>
       </div>
     </div>
-    <p class="small muted">Everyone has the same ten numbered channels. Check the channels you want to join. Channels 01–05 are open; Channels 06–10 require their four-digit PIN. There is no link to send and no channel to create.</p>
+    <p id="radioModeHelp" class="small muted">Basic mode shows Channels 01 and 02, with one Talk button per channel. Advanced mode displays all ten shared channels. This is a display and connection preference, not employee access control.</p>
     <div class="multi-toolbar">
       <button class="secondary" id="restoreChannels" type="button">Restore selected</button>
       <button class="secondary" id="monitorAll" type="button">Monitor joined</button>
       <button class="secondary" id="muteAll" type="button">Mute joined</button>
       <button class="secondary" id="enableSpeakers" type="button">Enable speakers</button>
     </div>
-    <p id="channelMessage" class="small muted" aria-live="polite">Join up to five channels at once. Each talk button transmits only to its own channel.</p>
+    <p id="channelMessage" class="small muted" aria-live="polite">Join up to two channels at once. Each talk button transmits only to its own channel.</p>
     <div id="channelList" class="multi-channel-list"></div>
   </section>
 
@@ -112,9 +119,10 @@
   <section class="card warning">
     <span class="micro-label">DEMO RADIO • NOT AUTHENTICATED WORK COMMUNICATIONS</span>
     <p id="errorMessage" class="error hidden" role="alert"></p>
-    <p class="small muted">Only channels you've joined receive audio, participant names, calls, and on-air activity. Monitoring a channel requires joining it. Channel 06–10 PIN checks are performed by this public browser app and can be bypassed; a real administrator/employee system requires a separate server with login and server-enforced permissions.</p>
+    <p class="small muted">Only channels you've joined receive audio, participant names, calls, and on-air activity. Monitoring a channel requires joining it. Basic/Advanced is not an access restriction. Channels 06–10 have only browser-side PIN checks, which can be bypassed; a real employee system requires login and server-enforced permissions.</p>
     <div class="backup-links">
-      <a href="./legacy-v6-1.html">Previous layout (V6.1)</a>
+      <a href="./legacy-v6-2.html">Previous version (V6.2)</a>
+      <a href="./legacy-v6-1.html">Earlier layout (V6.1)</a>
       <a href="./legacy-v5.html">Older custom-channel version</a>
       <a href="./legacy-v4-1.html">Earlier single-channel version</a>
     </div>
