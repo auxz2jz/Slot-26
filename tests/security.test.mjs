@@ -6,8 +6,8 @@ import {newRoom,roomLink,normalizeChannels,validPin,deriveProtectedRoomId} from 
 test('channel PIN format',()=>{
   assert.equal(validPin('12345678'),true);
   assert.equal(validPin('123456789012'),true);
-  assert.equal(validPin('1234'),false);
-  assert.equal(validPin('1234567'),false);
+  assert.equal(validPin('1234'),true);
+  assert.equal(validPin('123'),false);
   assert.equal(validPin('1234567890123'),false);
   assert.equal(validPin('1234abcd'),false);
 });
@@ -23,7 +23,7 @@ test('protected channel IDs depend on both PIN and invitation room',async()=>{
   assert.notEqual(a,wrong);
   assert.notEqual(a,other);
   assert.notEqual(a,room);
-  await assert.rejects(()=>deriveProtectedRoomId(room,'1234',webcrypto),/8–12/);
+  await assert.rejects(()=>deriveProtectedRoomId(room,'123',webcrypto),/4–12/);
 });
 
 test('reusable invitations do not contain PINs or protected signaling IDs',async()=>{
