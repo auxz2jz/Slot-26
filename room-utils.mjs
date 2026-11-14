@@ -35,10 +35,10 @@ export function normalizeChannels(raw) {
 /** PIN-keyed signaling namespace. No PIN or derived namespace appears in a share link. 
  * Prototype access separation only — not a server-enforced authorization system.
  */
-export function validPin(pin) { return typeof pin==='string' && /^[0-9]{8,12}$/.test(pin); }
+export function validPin(pin) { return typeof pin==='string' && /^[0-9]{4,12}$/.test(pin); }
 export async function deriveProtectedRoomId(publicRoomId, pin, cryptoSource=globalThis.crypto) {
   if(!validRoom(publicRoomId)) throw new Error('Invalid channel ID.');
-  if(!validPin(pin)) throw new Error('Use an 8–12 digit channel PIN.');
+  if(!validPin(pin)) throw new Error('Use a 4–12 digit channel PIN.');
   if(!cryptoSource?.subtle || !cryptoSource.getRandomValues) throw new Error('Secure PIN support requires HTTPS and Web Crypto.');
   const enc=new TextEncoder();
   const master=await cryptoSource.subtle.importKey('raw',enc.encode(pin),'PBKDF2',false,['deriveBits']);
