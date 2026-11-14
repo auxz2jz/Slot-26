@@ -188,5 +188,5 @@ test('V6: all browsers have the identical ten shared channels, and a bad PIN pre
   assert.equal(person.sessions.size,0,'incorrect four-digit PIN must not create any channel session');
   assert.match(person.ui.message.textContent,/Incorrect PIN/);
   // Unauthorized users cannot learn names/roster/talk activity just by viewing the channel list.
-  assert.match(person.rows.get(secure.id).speaker.textContent,/Join to see channel/);
+  assert.match(person.rows.get(secure.id).speaker.textContent,/Join to see (this )?channel/);
 });
