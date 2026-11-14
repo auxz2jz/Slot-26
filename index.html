@@ -7,15 +7,15 @@
 <meta name="description" content="Relay One: ten shared radio channels with multi-channel monitoring and group-only push-to-talk.">
 <title>Relay One — Shared Radio Channels</title>
 <link rel="stylesheet" href="./styles.css?v=4.1.0">
-<link rel="stylesheet" href="./multi.css?v=6.1.0">
+<link rel="stylesheet" href="./multi.css?v=6.2.0">
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
-<script type="module" src="./multi-radio.js?v=6.1.0"></script>
+<script type="module" src="./multi-radio.js?v=6.2.0"></script>
 </head>
 <body>
 <main class="app multi-app">
   <header class="masthead">
     <div class="brand-mark" aria-hidden="true">◉</div>
-    <div><p class="eyebrow">RELAY ONE / TEN-CHANNEL V6.1</p><h1>Group radio</h1></div>
+    <div><p class="eyebrow">RELAY ONE / TEN-CHANNEL V6.2</p><h1>Group radio</h1></div>
     <span class="version">10 channels</span>
   </header>
 
@@ -53,10 +53,40 @@
     </div>
   </section>
 
+  <section class="card data-usage-panel" aria-label="Radio data usage">
+    <div class="section-heading">
+      <div><span class="micro-label">DEVELOPMENT METER</span><h2>Estimated radio data</h2></div>
+      <span class="secondary-text" id="dataCurrentRate">0 kbps</span>
+    </div>
+    <div class="data-usage-grid">
+      <div class="data-usage-cell">
+        <span class="micro-label">THIS SESSION</span>
+        <strong id="dataSessionTotal" class="data-amount">0 B</strong>
+        <span id="dataSessionBreakdown" class="small muted">↑ 0 B · ↓ 0 B</span>
+      </div>
+      <div class="data-usage-cell">
+        <span class="micro-label">SAVED ON THIS DEVICE</span>
+        <strong id="dataSavedTotal" class="data-amount">0 B</strong>
+        <span id="dataSavedBreakdown" class="small muted">↑ 0 B · ↓ 0 B</span>
+      </div>
+    </div>
+    <div class="data-meter-bottom">
+      <span class="small muted">WebRTC estimate only; not Verizon billing data. Saved per browser.</span>
+      <button id="resetDataSaved" class="secondary compact" type="button">Reset saved</button>
+    </div>
+  </section>
+
   <section class="card channel-overview" aria-label="Available radio channels">
     <div class="section-heading">
       <div><span class="micro-label">SHARED RADIO CHANNELS</span><h2>Choose your channels</h2></div>
       <strong id="joinCount" class="counter">0 / 5 joined</strong>
+    </div>
+    <div class="layout-switcher" role="group" aria-label="Channel display density">
+      <span class="micro-label">CHANNEL LAYOUT</span>
+      <div class="layout-switch-buttons">
+        <button id="compactLayout" type="button" aria-pressed="true" class="secondary">Compact</button>
+        <button id="detailedLayout" type="button" aria-pressed="false" class="secondary">Detailed</button>
+      </div>
     </div>
     <p class="small muted">Everyone has the same ten numbered channels. Check the channels you want to join. Channels 01–05 are open; Channels 06–10 require their four-digit PIN. There is no link to send and no channel to create.</p>
     <div class="multi-toolbar">
@@ -84,7 +114,8 @@
     <p id="errorMessage" class="error hidden" role="alert"></p>
     <p class="small muted">Only channels you've joined receive audio, participant names, calls, and on-air activity. Monitoring a channel requires joining it. Channel 06–10 PIN checks are performed by this public browser app and can be bypassed; a real administrator/employee system requires a separate server with login and server-enforced permissions.</p>
     <div class="backup-links">
-      <a href="./legacy-v5.html">Previous version (custom channels)</a>
+      <a href="./legacy-v6-1.html">Previous layout (V6.1)</a>
+      <a href="./legacy-v5.html">Older custom-channel version</a>
       <a href="./legacy-v4-1.html">Earlier single-channel version</a>
     </div>
   </section>
