@@ -1,57 +1,47 @@
-# Relay One — two-device web walkie-talkie
+# Relay One — Browser Walkie-Talkie
 
-A browser-based, **two-person, half-duplex push-to-talk prototype** that runs as a static site. No login, build tooling, database, or paid server is required for a first test. The site uses **WebRTC for encrypted audio**, the free public **PeerJS Cloud** for connection signaling, and STUN for typical NAT traversal. The free cloud is a prototype dependency, not an uptime guarantee.
+A simple **two-person push-to-talk web app** for testing between phones, tablets, and desktop browsers. This repository is the **Slot-26 prototype**, not the future authenticated work radio.
 
-## How to test on two devices (GitHub Pages)
+## Try it on two devices
 
-1. The `index.html` file in this repository is the complete standalone web app.
-2. Open the repository's **Settings → Pages → Build and deployment**. Choose **Deploy from a branch**, `main`, `/(root)` and **Save**.
-4. Visit **`https://auxz2jz.github.io/Slot-26/`** once GitHub reports that Pages is published.
-5. On device 1, enter a name and tap **Create channel & enable microphone**. Grant microphone permission. Tap **Copy**, then message the invitation link to device 2.
-6. On device 2, open the invitation in Chrome or Safari and tap **Join channel & enable microphone**. Grant microphone permission.
-7. When both show **Connected**, **hold** the large button to talk; **release** to listen. If you can't hear anything, tap **Enable speaker**.
-8. Test one phone on cellular data and the other on Wi-Fi. Keep both screens awake and use headphones if the devices are near each other.
+The complete app is in **[index.html](index.html)**. No build tooling or hosting server is required for the static page; GitHub Pages can serve it over HTTPS.
 
-GitHub Pages is **HTTPS**, which is required for microphone access. Opening `index.html` locally as a file is not a supported two-device test; likewise plain HTTP on another device's LAN IP usually cannot access the microphone.
+### Publish using GitHub Pages
 
-## What it does
+1. Open [this repository's Pages settings](https://github.com/auxz2jz/Slot-26/settings/pages).
+2. Under **Build and deployment**, set **Source: Deploy from a branch**.
+3. Choose **main**, then **/(root)** and click **Save**.
+4. After GitHub reports a successful Pages deployment, open **https://auxz2jz.github.io/Slot-26/**. The URL does not work until Pages is activated.
 
-- Two devices per private invitation, with 128-bit randomly generated room tokens.
-- Hold-to-talk / release-to-listen, with local microphone muted by default.
-- Encrypted WebRTC browser-to-browser audio.
-- Connection/waiting/receiving/transmitting statuses.
-- Simple display names, copyable invitation URL, speaker-enabling button, disconnect and retry.
-- Automatically tries to reconnect the second device after a dropped first-device connection.
-- Supports phone browsers or desktop Chrome/Safari/Edge/Firefox with internet access.
-- Optional self-hosted signaling server skeleton in [`server/`](server/README.md).
+### Connect
 
-## Limitations and security
+1. On device A, open the published page, enter a display name, and tap **Create channel & enable microphone**.
+2. Allow microphone access, then tap **Copy** to share the private invitation link.
+3. On device B, open that *exact* link in a supported browser. Enter a name and tap **Join channel & enable microphone**.
+4. After both show **Connected**, press and **hold** the big microphone button to speak, and release to listen.
+5. If the receiving device is silent, tap **Enable speaker**, and check volume/audio output.
 
-- **Prototype only:** No accounts, no login, no dispatcher, no multi-user channels, no admin controls, no emergency communication guarantee, and no recorded audio.
-- Room links are private *by secrecy*, not by accounts. Anyone with an invitation link can attempt to join. Do not use for sensitive workplace traffic.
-- PeerJS Cloud is a third-party signaling service. Audio is encrypted in WebRTC; TURN relay would carry encrypted media if deployed later.
-- This version has no TURN relay. Some restrictive corporate/cellular networks will fail to connect despite both users being online. Add a real TURN service when deploying to your dedicated server.
-- Phone OS/browser backgrounding, screen locking, power saving, or other apps taking the microphone can interrupt calls. This is not a native always-on radio.
-- One client is role A and the other is role B. Extremely simultaneous claims/presses may cause a brief overlap; this is not a server-controlled radio floor.
-- The example optional PeerServer has no authentication and should not be exposed as a production service without security controls.
+For a realistic test, put one phone on Wi-Fi and another on cellular. Keep the browsers foregrounded and screens awake. If testing nearby, use headphones to avoid feedback.
 
-## Troubleshooting
+## How it works
 
-- **Microphone button fails:** Open the site using `https://`, check permissions and reload. Try Chrome/Safari rather than an in-app browser.
-- **Second user cannot join / room full:** First user may have another tab or browser still connected. Close old tabs or create a new channel.
-- **Waiting forever:** Check both devices have internet; try Wi-Fi or cellular, and open the invite URL precisely. Restricted NATs may require TURN (not included).
-- **Connected but silent:** Tap **Enable speaker**, check volume/Bluetooth route, talk on one device at a time and release the button after speaking.
-- **Call stops when phone locks:** Leave the browser foregrounded and keep the screen awake.
-- **Need a different signaling server:** Update `config.js` peerServer options and set up the optional `server/` service behind TLS.
+- WebRTC sends **encrypted peer-to-peer audio** between browsers.
+- The external, free **PeerJS Cloud** service is used for connection signaling, and public STUN servers assist with NAT traversal.
+- Only **one other participant** can join a given randomly generated invitation room.
+- Local microphone tracks start muted and are enabled only while you hold push-to-talk.
+- There is no database, account requirement, audio recording, or paid server for this prototype.
 
-## Developer testing
+## Important limitations
 
-No build step is needed for GitHub Pages. `standalone/index.html` is a ready-to-upload, self-contained edition of the app (except the pinned PeerJS CDN dependency). Local development on the **same machine** can use `python -m http.server 8080` then `http://localhost:8080/`; for other devices use the hosted HTTPS site.
+- This is **not** an emergency radio or a security-grade work communication system.
+- The room URL is a **bearer invitation**: anyone who has it may try joining. Do not share sensitive workplace details.
+- PeerJS Cloud is third-party infrastructure and has no service guarantee.
+- Without a TURN relay, some cellular/corporate network combinations may fail. A dedicated work version needs TURN and authenticated signaling.
+- Mobile browsers may interrupt audio when the screen locks, the tab is backgrounded, or the OS reclaims the microphone.
+- The prototype doesn't provide server-enforced channel arbitration, dispatcher features, or user accounts.
 
-Pure utility tests (Node.js 20+):
+## Next stage
 
-```bash
-node --test tests/*.test.mjs
-```
+Once both devices work, we can extend Slot-26 with user authentication, persistent channels, dispatcher administration, a dedicated WebRTC signaling/TURN server, better reconnection, and communication auditing, with proper privacy controls.
 
-All project source code is yours to modify. PeerJS is an open-source dependency loaded from a pinned CDN URL.
+**Source note:** This repository uses a complete standalone `index.html` containing the HTML, CSS, and JavaScript. It loads PeerJS version 1.5.5 from a CDN. The optional local-development files and test utilities are available in the source archive from the original project draft.
