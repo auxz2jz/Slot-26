@@ -97,7 +97,7 @@ class Peer extends Events {
   }
   reconnect(){this.open=true;this.disconnected=false;this.emit('open',this.id);}
 }
-const source=readFileSync(new URL('../multi-radio.js',import.meta.url),'utf8')
+const source=readFileSync(new URL('../legacy-v5.js',import.meta.url),'utf8')
   .replace(/^import\s*\{[\s\S]*?\}\s*from\s*'[^']+';\s*/,'');
 const utilityNames=[
   'MAX_PEOPLE','PALETTE','validRoom','newRoom','cleanName','cleanTitle','cleanColor',
@@ -134,7 +134,7 @@ function browser(name,rooms){
     localStorage,location,{replaceState(){}},FakeStream,URLSearchParams,
     soon,cancel,repeat,stopRepeat);
 }
-test('two overlapping channels remain isolated while one user talks',async()=>{
+test('V5 backup: two overlapping channels remain isolated while one user talks',async()=>{
   const a={id:utils.newRoom(webcrypto),title:'Patrol',secure:false};
   const b={id:utils.newRoom(webcrypto),title:'Dispatch',secure:false};
   const clients=['Alice','Bob','Chris'].map(name=>browser(name,[a,b]));
