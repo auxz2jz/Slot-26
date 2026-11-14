@@ -123,10 +123,10 @@ async function joinChannel(c){
   if(c.secure){
     pin=pinCache.get(c.id);
     if(!pin){
-      pin=window.prompt('Enter the 4–12 digit PIN for '+c.title+'.');
+      pin=window.prompt('Enter the 4-digit PIN for '+c.title+'.');
       if(pin===null)return;
       pin=pin.trim();
-      if(!validPin(pin)){setMessage('Incorrect PIN format: 4–12 digits are required.');return;}
+      if(!/^[0-9]{4}$/.test(pin)){setMessage('Enter exactly four numeric digits for this private channel.');return;}
     }
   }
   unlockSound();getProfile();clearError();joinInProgress++;setMessage('Checking access to '+c.title+'…');
