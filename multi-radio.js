@@ -13,7 +13,7 @@ const ui = {
   restore:$('restoreChannels'), monitorAll:$('monitorAll'), muteAll:$('muteAll'), enableSpeakers:$('enableSpeakers'),
   quick:$('quickTalk'), quickText:$('quickText'), focusTitle:$('focusTitle'),
   focusStatus:$('focusStatus'), focusSpeaker:$('focusSpeaker'), focusHint:$('focusHint'),
-  audio:$('remoteAudio')
+  audio:$('remoteAudio'), diagnostics:$('diagnosticLog'), copyDiagnostics:$('copyDiagnostics'), clearDiagnostics:$('clearDiagnostics')
 };
 const PROFILE_KEY='relay-one.profile.v4';
 const MONITOR_KEY='relay-one.monitor.v5';
@@ -38,6 +38,49 @@ const sessions=new Map(); // public channel ID -> independent ChannelSession
 const rows=new Map();
 let focusedId=null, selectedTx=null, microphone=null, micPromise=null, alertContext=null;
 let joinInProgress=0;
+const diagnosticEvents=[];
+const DIAGNOSTIC_LIMIT=150;
+let nextMediaNegotiation=0;
+function logRadio(event,channel='',detail=''){
+  const text=[new Date().toISOString(),channel||'DEVICE',event,detail].filter(Boolean).join(' | ');
+  diagnosticEvents.push(text);
+  if(diagnosticEvents.length>DIAGNOSTIC_LIMIT)diagnosticEvents.shift();
+  if(ui.diagnostics)ui.diagnostics.textContent=diagnosticEvents.join('\n');
+  // Avoid logging callsigns, room IDs, PINs, conversation content, or microphone recordings.
+}
+function diagnosticReport(){
+  const connection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+  const kind=connection?.effectiveType||'unavailable';
+  const current=Array.from(sessions.values()).map(s=>{
+    const peers=[...s.members.values()].filter(m=>m.data?.open);
+    const audio=peers.filter(m=>m.stream).length;
+    const ice=peers.map(m=>m.call?.peerConnection?.iceConnectionState||'none').join(',');
+    return s.room.title+': signaling '+(s.ready()?'ready':'waiting')+
+      ', voice '+audio+'/'+peers.length+', ICE '+ice;
+  });
+  return ['Relay One V6.1 connection diagnostics',
+    'Recorded: '+new Date().toISOString(),
+    'Browser online: '+(navigator.onLine===false?'no':'yes/unknown'),
+    'Network effective type: '+kind+' (if available; not cellular signal)',
+    'Active channels: '+sessions.size,
+    ...current,'','Recent events:',...diagnosticEvents].join('\n');
+}
+if(ui.copyDiagnostics)ui.copyDiagnostics.addEventListener('click',async()=>{
+  const report=diagnosticReport();
+  try{if(!navigator.clipboard?.writeText)throw Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(report);setMessage('Diagnostic log copied. You can paste it here for analysis.');
+  }catch{window.prompt('Copy connection diagnostics:',report);}
+});
+if(ui.clearDiagnostics)ui.clearDiagnostics.addEventListener('click',()=>{
+  diagnosticEvents.length=0;if(ui.diagnostics)ui.diagnostics.textContent='Diagnostic log cleared.';
+});
+window.addEventListener('offline',()=>logRadio('BROWSER OFFLINE','','Browser reports internet unavailable'));
+window.addEventListener('online',()=>logRadio('BROWSER ONLINE','','Browser reports internet reachable'));
+const connectionInfo=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+connectionInfo?.addEventListener?.('change',()=>{
+  logRadio('NETWORK TYPE CHANGE','',connectionInfo.effectiveType||'type not exposed');
+});
+logRadio('RADIO START','','Connection diagnostics enabled; no PINs, IDs or audio recorded');
 const makeCtx=()=>{if(!alertContext){const C=window.AudioContext||window.webkitAudioContext;if(C)alertContext=new C();}return alertContext;};
 function unlockSound(){try{const ctx=makeCtx();if(ctx?.state==='suspended')void ctx.resume().catch(()=>{});}catch{}}
 function playTone(kind){
@@ -63,7 +106,7 @@ function playTone(kind){
 }
 function persistDesired(){storeSet(ACTIVE_KEY,[...desiredJoined]);}
 function persistMonitors(){storeSet(MONITOR_KEY,monitorPrefs);}
-function reportError(message){ui.error.textContent=message;ui.error.classList.remove('hidden');}
+function reportError(message){ui.error.textContent=message;ui.error.classList.remove('hidden');logRadio('ERROR','',message);}
 function clearError(){ui.error.textContent='';ui.error.classList.add('hidden');}
 function setMessage(text){ui.message.textContent=text;}
 function storedRoom(id){return channels.find(c=>c.id===id);}
@@ -153,6 +196,7 @@ async function joinChannel(c){
     desiredJoined.add(c.id);persistDesired();
     if(!focusedId)focusedId=c.id;
     session.start();
+    logRadio('CHANNEL JOIN',c.title,'New microphone track; independent WebRTC room');
     setMessage('Joined '+c.title+'. Keep this page open while using the radio.');
     updateAll();
   }catch(err){reportError(err?.message||'Cannot start the channel.');setMessage('Unable to join '+c.title);}
@@ -162,7 +206,7 @@ function leaveChannel(id){
   const s=sessions.get(id);
   if(!s)return;
   if(selectedTx===s)releaseTalk(s);
-  s.stop();sessions.delete(id);desiredJoined.delete(id);persistDesired();
+  logRadio('CHANNEL LEAVE',s.room.title);s.stop();sessions.delete(id);desiredJoined.delete(id);persistDesired();
   if(focusedId===id)focusedId=sessions.keys().next().value||null;
   releaseMicrophoneIfUnused();updateAll();
 }
@@ -187,7 +231,7 @@ ui.enableSpeakers.addEventListener('click',async()=>{
 
 function startPTT(s){
   if(!s || !s.ready() || selectedTx && selectedTx!==s || s.floor && s.floor!==s.myId)return;
-  unlockSound();selectedTx=s;s.wantTalk=true;
+  unlockSound();selectedTx=s;s.wantTalk=true;logRadio('PTT PRESSED',s.room.title);
   for(const other of sessions.values())other.applyAudioOutput();
   if(s.isHost){if(!s.floor)s.setFloor(s.myId,profile.txTone);}
   else s.send(s.hostId(),{type:'request',tone:profile.txTone});
@@ -195,7 +239,7 @@ function startPTT(s){
 }
 function releaseTalk(s){
   if(!s)return;
-  s.wantTalk=false;s.disableTransmit();
+  s.wantTalk=false;s.disableTransmit();logRadio('PTT RELEASED',s.room.title);
   if(selectedTx===s)selectedTx=null;
   for(const other of sessions.values())other.applyAudioOutput();
   if(s.isHost){if(s.floor===s.myId)s.setFloor(null);}
@@ -347,10 +391,10 @@ class ChannelSession{
     const generation=this.generation;
     const id=this.hostId();this.myId=id;this.isHost=false;
     const peer=new window.Peer(id,{debug:0,config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]}});
-    this.peer=peer;this.note='Checking channel membership…';
+    this.peer=peer;this.note='Checking channel membership…';logRadio('HOST ATTEMPT',this.room.title);
     peer.on('open',()=>{
       if(!this.current(peer,generation))return;
-      this.isHost=true;this.roster=new Set([this.myId]);this.status='Online';
+      this.isHost=true;this.roster=new Set([this.myId]);this.status='Online';logRadio('SIGNALING READY',this.room.title,'Coordinator');
       this.note='Channel ready. Waiting for people to join.';
       updateRow(this.publicId);updateQuick();
     });
@@ -362,10 +406,10 @@ class ChannelSession{
     const generation=this.generation;
     this.myId=guestId(this.id);this.isHost=false;
     const peer=new window.Peer(this.myId,{debug:0,config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]}});
-    this.peer=peer;this.note='Finding channel coordinator…';
+    this.peer=peer;this.note='Finding channel coordinator…';logRadio('GUEST CONNECT',this.room.title);
     peer.on('open',()=>{
       if(!this.current(peer,generation))return;
-      this.status='Connecting';this.tryHost();
+      this.status='Connecting';logRadio('SIGNALING READY',this.room.title,'Participant');this.tryHost();
     });
     this.bindPeer(peer,generation,false);
   }
@@ -393,7 +437,7 @@ class ChannelSession{
     });
     p.on('disconnected',()=>{
       if(!this.current(p,g))return;
-      this.note='Signaling interrupted; keeping active audio while reconnecting.';
+      this.note='Signaling interrupted; keeping active audio while reconnecting.';logRadio('SIGNALING DISCONNECTED',this.room.title,'Keeping established voice where possible');
       try{p.reconnect();}catch{}
       if(this.signalingRetry)clearTimeout(this.signalingRetry);
       this.signalingRetry=setTimeout(()=>{
@@ -406,7 +450,7 @@ class ChannelSession{
       if(asHost && err?.type==='unavailable-id' && !this.isHost){this.beginGuest();return;}
       if(err?.type==='peer-unavailable'){if(!this.isHost && !this.members.get(this.hostId())?.data?.open)this.note='Waiting for coordinator…';return;}
       if(err?.type==='unavailable-id'){this.scheduleRetry(2600);return;}
-      this.note='Network issue ('+(err?.type||'unknown')+'). Reconnecting if necessary.';
+      this.note='Network issue ('+(err?.type||'unknown')+'). Reconnecting if necessary.';logRadio('SIGNALING ERROR',this.room.title,err?.type||'unknown');
       if(!this.hasPeers())this.scheduleRetry(4000);
       updateRow(this.publicId);
     });
@@ -416,7 +460,7 @@ class ChannelSession{
   scheduleRetry(delay=2400){
     if(this.stopped||this.retry)return;
     this.retry=setTimeout(()=>{this.retry=null;if(!this.stopped)this.beginHost();},delay);
-    this.note='Reconnecting…';updateRow(this.publicId);
+    this.note='Reconnecting…';logRadio('RECONNECT SCHEDULED',this.room.title);updateRow(this.publicId);
   }
   reconnectSignaling(){
     if(this.stopped)return;
@@ -439,10 +483,10 @@ class ChannelSession{
       if(m.data.open || Date.now()-m.pending<PENDING_AFTER){try{dc.close()}catch{}return;}
       try{m.data.close()}catch{}
     }
-    m.data=dc;m.pending=Date.now();
+    m.data=dc;m.pending=Date.now();logRadio('PEER DATA CONNECTING',this.room.title);
     dc.on('open',()=>{
       if(g!==this.generation||m.data!==dc)return;
-      m.lastSeen=Date.now();
+      m.lastSeen=Date.now();logRadio('PEER DATA OPEN',this.room.title);
       this.send(dc.peer,{type:'hello',name:profile.name,color:profile.color});
       if(this.isHost)this.broadcastRoster();
       if(dc.peer===this.hostId())this.lastHost=Date.now();
@@ -459,6 +503,7 @@ class ChannelSession{
     const closed=()=>{
       if(g!==this.generation || m.data!==dc)return;
       const hostWasLost=!this.isHost && dc.peer===this.hostId();
+      logRadio('PEER DATA CLOSED',this.room.title);
       this.dropMember(dc.peer);
       if(hostWasLost)this.scheduleRetry(1400);
     };
@@ -534,7 +579,7 @@ class ChannelSession{
     m.call=call;m.mediaPending=Date.now();
     call.on('stream',stream=>{
       if(g!==this.generation || m.call!==call)return;
-      m.stream=stream;
+      m.stream=stream;m.mediaFailures=0;logRadio('VOICE STREAM READY',this.room.title);
       if(!m.audio){
         const a=document.createElement('audio');a.autoplay=true;a.playsInline=true;a.setAttribute('playsinline','');
         a.muted=!(this.monitor && (!selectedTx || selectedTx===this));a.dataset.channel=this.publicId;a.dataset.peer=call.peer;
@@ -546,6 +591,7 @@ class ChannelSession{
     });
     const closed=()=>{
       if(g!==this.generation||m.call!==call)return;
+      logRadio('VOICE CALL CLOSED',this.room.title);
       this.dropMedia(m);
       if(this.myId<call.peer && m.data?.open)
         setTimeout(()=>{if(g===this.generation && !this.stopped)this.startMedia(call.peer,g);},2600);
