@@ -61,3 +61,13 @@
 .multi-channel .monitor-label input:disabled{cursor:not-allowed}
 .group-subtitle{padding-left:34px}
 @media(max-width:350px){.group-action-row{grid-template-columns:1fr 1fr 1fr}.group-action-row button{font-size:11px}}
+
+/* Connection troubleshooting / V6.1 */
+.radio-diag{margin-block:12px}
+.radio-diag summary{display:flex;gap:10px;align-items:center;justify-content:space-between;cursor:pointer;list-style:none;padding:5px 0}
+.radio-diag summary::-webkit-details-marker{display:none}
+.radio-diag summary:after{content:"▾";font-size:20px;color:#9ad5d2}
+.radio-diag[open] summary:after{content:"▴"}
+.radio-diag .secondary-text{font-size:11px;line-height:1.5}
+.diag-log{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;line-height:1.5;max-height:290px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#081521;border-radius:9px;border:1px solid #375266;color:#c9e5e7;padding:13px;margin:10px 0 0}
+.radio-diag .multi-toolbar .secondary{white-space:normal}
