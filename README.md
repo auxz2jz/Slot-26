@@ -70,6 +70,33 @@ node --test tests/rooms.test.mjs
 
 The source passed JavaScript syntax checks; utility checks passed for room IDs, saved channel deduplication, links, and profiles. A mocked three-browser signaling/audio simulation successfully created a full three-way mesh, granted one speaker, displayed that speaker's name on all three devices, and cleared it on release. **A real multi-device field test is still needed.**
 
+
+## Version 4.1 — protected channels and radio squawk
+
+### Channel PINs
+
+- In **Create a new channel**, select **Require channel PIN** and enter an **8–12 digit numeric PIN**. The existing saved-channel **Lock** action also lets you protect an open channel.
+- Text the **reusable Link** and tell members the **PIN separately** (ideally using a different communication method). Invite URLs contain `secure=1`, but **never contain the PIN or PIN-derived WebRTC room ID**.
+- Every member enters the same PIN when they join. A separate deterministic PBKDF2-derived signaling namespace is used for each combination of channel ID and PIN; a device with a wrong PIN reaches a **different isolated session**, not the actual channel.
+- PINs are held in memory during an open page session, but are **not saved in persistent localStorage**; after a reload, members must enter the PIN again.
+- Locking an existing room moves the protected group to a new namespace. **Reshare the new protected link and PIN**; previously shared unprotected invitations do not grant access to the protected session.
+- In this browser-only prototype, an incorrect PIN may look like an **empty channel** rather than displaying "Wrong PIN". Ask another member to confirm the PIN if you cannot see them.
+- **Important:** A shared PIN is **not a verified user account**, and this scheme does not provide server-side authorization, PIN attempt rate limits, membership revocation, or assurance against determined attackers. Use a dedicated server with authenticated user identities and permissions for private work communications.
+
+### Channel activity privacy
+
+The client connects to **one selected channel at a time**. It does not send participant rosters, active speaker names, PTT activity, or WebRTC voice to other channels. PIN-protected rooms have distinct signaling namespaces. A user who is a member of multiple channels can join one, leave, then join another; **simultaneous channel monitoring and per-channel PTT buttons are planned for the later server-backed release**.
+
+Audio and control data use WebRTC's encrypted transport, but encryption does not authenticate human identity or prevent a legitimate member from recording or forwarding audio.
+
+### Optional PTT-start squawk
+
+While in a radio channel, select **Send a short squawk when I start talking** to notify listeners. Listeners may independently uncheck **Play incoming squawks from this channel**. The squawk lasts about **0.2 seconds**, and the sender's microphone opens about **0.28 seconds** after winning the channel's talk floor, so the alert should precede the message. The tone is synthesized locally by the receiving browser; it is **not** yet injected into the outgoing voice stream. Some phones may suppress the tone when the page is backgrounded or audio permissions are restricted.
+
+### Automated checks
+
+GitHub Actions runs JavaScript syntax and room/PIN tests from [checks.yml](.github/workflows/checks.yml). Source files and local tests are published in this repository; over-the-air PIN protection and background tone behavior still require real device testing.
+
 ## Next production phase
 
 For Zak's Security One or other work deployments: authenticated users, centrally managed persistent channel membership, a dedicated secure signaling service, server-issued TURN credentials, privacy-aware administrative controls, dispatch/group switching, and a server-forwarded audio architecture when groups outgrow a browser mesh.
