@@ -1,0 +1,173 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {webcrypto} from 'node:crypto';
+import * as utils from '../room-utils.mjs';
+
+// Deterministic, in-memory PeerJS and browser stand-ins. Tests use no network or microphone.
+class Events {
+  constructor(){this.listeners={};}
+  on(event,fn){(this.listeners[event]??=[]).push(fn);return this;}
+  emit(event,...args){for(const fn of this.listeners[event]||[])fn(...args);}
+}
+class FakeElement {
+  constructor(tag='div'){
+    this.tagName=tag.toUpperCase();this.value='';this.textContent='';this.children=[];
+    this.style={setProperty(){}};this.dataset={};this.disabled=false;this.checked=false;
+    this.muted=false;this.classList={add(){},remove(){},toggle(){}};
+    this.listeners={};
+  }
+  addEventListener(k,fn){(this.listeners[k]??=[]).push(fn);}
+  append(...children){this.children.push(...children);}
+  appendChild(child){this.children.push(child);}
+  replaceChildren(...children){this.children=children;}
+  setAttribute(){}
+  remove(){}
+  pause(){}
+  play(){return Promise.resolve();}
+  setPointerCapture(){}
+}
+class FakeStream {
+  constructor(tracks){this.tracks=tracks;}
+  getAudioTracks(){return this.tracks;}
+  getTracks(){return this.tracks;}
+}
+let trackNum=0;
+function track(){
+  const t={id:++trackNum,enabled:true,readyState:'live',stop(){this.readyState='ended';}};
+  t.clone=function(){const c=track();c.enabled=t.enabled;return c;};
+  return t;
+}
+const server=new Map();
+let queue=[],jobs=new Map(),jobId=0,intervals=new Map();
+function soon(fn,ms=0){const id=++jobId;jobs.set(id,fn);if(ms<=3000)queue.push(id);return id;}
+function cancel(id){jobs.delete(id);}
+function repeat(fn){const id=++jobId;intervals.set(id,fn);return id;}
+function stopRepeat(id){intervals.delete(id);}
+function flush(){
+  let limit=4000;
+  while(queue.length && limit--){
+    const id=queue.shift(),fn=jobs.get(id);
+    if(fn){jobs.delete(id);fn();}
+  }
+  assert.ok(limit>0,'unexpected recurring scheduling loop');
+}
+class DataConnection extends Events {
+  constructor(peer){super();this.peer=peer;this.open=false;}
+  send(message){if(this.open)soon(()=>this.other?.emit('data',message));}
+  close(){if(!this.open)return;this.open=false;this.emit('close');if(this.other?.open){this.other.open=false;this.other.emit('close');}}
+}
+class MediaConnection extends Events {
+  constructor(peer,stream){super();this.peer=peer;this.localStream=stream;this.open=false;this.peerConnection={iceConnectionState:'connected'};}
+  answer(stream){
+    this.open=true;this.other.open=true;
+    soon(()=>{this.emit('stream',this.other.localStream);this.other.emit('stream',stream);});
+  }
+  close(){if(!this.open)return;this.open=false;this.emit('close');if(this.other?.open){this.other.open=false;this.other.emit('close');}}
+}
+class Peer extends Events {
+  constructor(id){
+    super();this.id=id;this.open=false;this.destroyed=false;this.disconnected=false;this.links=[];
+    soon(()=>{if(server.has(id))this.emit('error',{type:'unavailable-id'});
+      else{server.set(id,this);this.open=true;this.emit('open',id);}});
+  }
+  connect(dest){
+    const out=new DataConnection(dest);this.links.push(out);
+    soon(()=>{
+      const p=server.get(dest);if(!p){this.emit('error',{type:'peer-unavailable'});return;}
+      const inc=new DataConnection(this.id);p.links.push(inc);out.other=inc;inc.other=out;
+      p.emit('connection',inc);
+      soon(()=>{out.open=true;inc.open=true;out.emit('open');inc.emit('open');});
+    });
+    return out;
+  }
+  call(dest,stream){
+    const out=new MediaConnection(dest,stream);this.links.push(out);
+    soon(()=>{
+      const p=server.get(dest);if(!p){this.emit('error',{type:'peer-unavailable'});return;}
+      const inc=new MediaConnection(this.id,null);p.links.push(inc);out.other=inc;inc.other=out;p.emit('call',inc);
+    });return out;
+  }
+  destroy(){
+    if(this.destroyed)return;
+    this.destroyed=true;this.open=false;
+    if(server.get(this.id)===this)server.delete(this.id);
+    for(const link of this.links)link.close();
+    this.emit('close');
+  }
+  reconnect(){this.open=true;this.disconnected=false;this.emit('open',this.id);}
+}
+const source=readFileSync(new URL('../multi-radio.js',import.meta.url),'utf8')
+  .replace(/^import\s*\{[\s\S]*?\}\s*from\s*'[^']+';\s*/,'');
+const utilityNames=[
+  'MAX_PEOPLE','PALETTE','validRoom','newRoom','cleanName','cleanTitle','cleanColor',
+  'roomLink','leaderId','guestId','validGuestId','validMemberId','normalizeChannels',
+  'validPin','deriveProtectedRoomId'
+];
+const environmentNames=[
+  'document','window','navigator','localStorage','location','history','MediaStream',
+  'URLSearchParams','setTimeout','clearTimeout','setInterval','clearInterval'
+];
+const appFactory=new Function(...utilityNames,...environmentNames,source+
+  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,sessions,ui};');
+const utilsForTest={
+  ...utils,
+  newRoom:()=>utils.newRoom(webcrypto),
+  guestId:id=>utils.guestId(id,utils.newRoom(webcrypto)),
+  deriveProtectedRoomId:(id,pin)=>utils.deriveProtectedRoomId(id,pin,webcrypto)
+};
+function browser(name,rooms){
+  const els=new Map();
+  const document={hidden:false,getElementById(id){if(!els.has(id))els.set(id,new FakeElement());return els.get(id);},
+    createElement(tag){return new FakeElement(tag);},addEventListener(){}};
+  const data=new Map([
+    ['relay-one.profile.v4',JSON.stringify({name,color:utils.PALETTE[0]})],
+    ['relay-one.channels.v4',JSON.stringify(rooms)]
+  ]);
+  const localStorage={getItem:k=>data.get(k)||null,setItem:(k,v)=>data.set(k,v)};
+  const navigator={mediaDevices:{getUserMedia:async()=>new FakeStream([track()])},
+    clipboard:{writeText:async()=>{}}};
+  const window={isSecureContext:true,Peer,addEventListener(){},
+    prompt(){return '1234';},confirm(){return true;}};
+  const location={href:'https://example.invalid/Slot-26/',pathname:'/Slot-26/',search:''};
+  return appFactory(...utilityNames.map(k=>utilsForTest[k]),document,window,navigator,
+    localStorage,location,{replaceState(){}},FakeStream,URLSearchParams,
+    soon,cancel,repeat,stopRepeat);
+}
+test('two overlapping channels remain isolated while one user talks',async()=>{
+  const a={id:utils.newRoom(webcrypto),title:'Patrol',secure:false};
+  const b={id:utils.newRoom(webcrypto),title:'Dispatch',secure:false};
+  const clients=['Alice','Bob','Chris'].map(name=>browser(name,[a,b]));
+  for(const c of clients){await c.joinChannel(a);flush();}
+  for(const c of clients.slice(0,2)){await c.joinChannel(b);flush();}
+  for(let i=0;i<3;i++){for(const tick of intervals.values())tick();flush();}
+  assert.deepEqual(clients.map(c=>c.sessions.size),[2,2,1]);
+  for(const c of clients){
+    const s=c.sessions.get(a.id);
+    assert.equal([...s.members.values()].filter(m=>m.data?.open).length,2);
+    assert.equal([...s.members.values()].filter(m=>m.stream).length,2);
+  }
+  for(const c of clients.slice(0,2)){
+    const s=c.sessions.get(b.id);
+    assert.equal([...s.members.values()].filter(m=>m.data?.open).length,1);
+    assert.equal([...s.members.values()].filter(m=>m.stream).length,1);
+  }
+  const aliceA=clients[0].sessions.get(a.id);
+  const aliceB=clients[0].sessions.get(b.id);
+  clients[0].startPTT(aliceA);flush();
+  assert.equal(aliceA.track.enabled,true);
+  assert.equal(aliceB.track.enabled,false,'other channel microphone must stay muted');
+  for(const c of clients)assert.equal(c.sessions.get(a.id).floor,aliceA.myId);
+  for(const c of clients.slice(0,2))assert.equal(c.sessions.get(b.id).floor,null);
+  const otherAudio=[...aliceB.members.values()].filter(m=>m.audio);
+  assert.ok(otherAudio.length>0);
+  assert.ok(otherAudio.every(m=>m.audio.muted),'other monitored channel is ducked during PTT');
+  clients[0].releaseTalk(aliceA);flush();
+  assert.equal(aliceA.track.enabled,false);
+  assert.equal(aliceB.track.enabled,false);
+  assert.ok(otherAudio.every(m=>!m.audio.muted),'monitor restores after releasing PTT');
+  clients[0].setMonitor(b.id,false);
+  assert.ok(otherAudio.every(m=>m.audio.muted),'monitor toggle mutes its own channel');
+  for(const c of clients)c.leaveChannel(a.id);
+  for(const c of clients.slice(0,2))c.leaveChannel(b.id);
+});
