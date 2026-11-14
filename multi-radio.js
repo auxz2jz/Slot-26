@@ -172,8 +172,8 @@ async function restoreJoined(){
   for(const id of ids){const c=storedRoom(id);if(c)await joinChannel(c);}
 }
 ui.restore.addEventListener('click',restoreJoined);
-ui.monitorAll.addEventListener('click',()=>{for(const c of channels)setMonitor(c.id,true);setMessage('Monitoring enabled on every saved channel you have joined.');});
-ui.muteAll.addEventListener('click',()=>{for(const c of channels)setMonitor(c.id,false);setMessage('All channels locally muted. You can still transmit to a joined channel.');});
+ui.monitorAll.addEventListener('click',()=>{for(const session of sessions.values())setMonitor(session.publicId,true);setMessage('Monitoring enabled for your joined channels only.');});
+ui.muteAll.addEventListener('click',()=>{for(const session of sessions.values())setMonitor(session.publicId,false);setMessage('Joined channels are locally muted. You can still transmit to one of them.');});
 ui.enableSpeakers.addEventListener('click',async()=>{
   unlockSound();
   let count=0;
