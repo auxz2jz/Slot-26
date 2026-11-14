@@ -2,92 +2,96 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0a1724">
-<meta name="description" content="Relay One: saved group walkie-talkie channels for up to six people.">
-<title>Relay One — Group Walkie-Talkie</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#081824">
+<meta name="description" content="Relay One: monitor and talk on multiple group channels without switching screens">
+<title>Relay One — Multi-channel Radio</title>
 <link rel="stylesheet" href="./styles.css?v=4.1.0">
+<link rel="stylesheet" href="./multi.css?v=5.0.0">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
+<script type="module" src="./multi-radio.js?v=5.0.0"></script>
 </head>
 <body>
-<main class="app">
+<main class="app multi-app">
   <header class="masthead">
     <div class="brand-mark" aria-hidden="true">◉</div>
-    <div><p class="eyebrow">RELAY ONE / PIN + SQUAWK V4.1</p><h1>Walkie-talkie</h1></div>
-    <span class="version">6 people max</span>
+    <div><p class="eyebrow">RELAY ONE / MULTI-CHANNEL V5</p><h1>Group radio</h1></div>
+    <span class="version">5 channels</span>
   </header>
-
-  <section class="card" id="homePanel">
-    <div class="section-heading"><div><span class="micro-label">YOUR RADIO PROFILE</span><h2>My identity</h2></div><span class="secondary-text">Saved on this device</span></div>
-    <label for="displayName">Name or callsign</label>
-    <input id="displayName" type="text" maxlength="30" autocomplete="nickname" placeholder="e.g. Patrol 1">
-    <label class="color-label">Your display color</label>
-    <div class="colors" id="colors" role="group" aria-label="Choose a profile color"></div>
-    <div class="divider"></div>
-    <span class="micro-label">SAVED CHANNELS</span>
-    <p class="muted small">Create a channel once. PIN-protected channels require both the reusable link and the PIN, shared separately. Only joined channel members see its participants and on-air activity.</p>
-    <div id="channelList" class="channel-list"></div>
-    <label for="newChannel">Create a new channel</label>
-    <div class="inline-input">
-      <input id="newChannel" type="text" maxlength="36" placeholder="e.g. Dispatch, Patrol, Friends">
-      <button class="secondary compact" id="createChannel" type="button">Create</button>
+  <section class="card" aria-label="Your profile">
+    <div class="section-heading">
+      <div><span class="micro-label">MY RADIO</span><h2>Profile &amp; sound</h2></div>
+      <span class="secondary-text">Saved on this device</span>
     </div>
-    <label class="setting-toggle"><input id="requirePin" type="checkbox"> Require channel PIN</label>
-    <div id="newPinBox" class="hidden"><label for="newPin">8–12 digit PIN (share separately from the link)</label><input id="newPin" type="password" inputmode="numeric" pattern="[0-9]*" minlength="8" maxlength="12" autocomplete="off" placeholder="8–12 digit PIN"></div>
-    <p class="muted small">PINs are never included in links or saved to permanent browser storage. A PIN change creates a different protected channel; all members must use the same PIN.</p>
-    <p id="homeMessage" class="small muted" aria-live="polite"></p>
+    <label for="displayName">Name / callsign</label>
+    <input id="displayName" type="text" maxlength="30" autocomplete="nickname" placeholder="Patrol 1">
+    <label for="colors">Display color</label>
+    <div id="colors" class="colors" role="group" aria-label="Choose your color"></div>
+    <div class="settings-grid">
+      <label class="setting-toggle"><input id="txTone" type="checkbox"> Squawk before I transmit</label>
+      <label class="setting-toggle"><input id="rxTone" type="checkbox"> Hear incoming squawks</label>
+      <label class="setting-toggle"><input id="alertTone" type="checkbox"> Hear channel call alerts</label>
+    </div>
+    <p class="small muted">Monitoring controls whether you hear each channel. Holding Talk sends to that channel only—even when you monitor other groups.</p>
   </section>
 
-  <section class="card hidden" id="radioPanel">
-    <div class="radio-header">
-      <div><span class="micro-label">CHANNEL</span><h2 id="channelTitle">General</h2></div>
-      <span class="status-badge" id="statusBadge" role="status">Connecting</span>
+  <section class="card quick-panel" aria-label="Quick push to talk">
+    <div class="section-heading">
+      <div><span class="micro-label">QUICK RADIO</span><h2 id="focusTitle">No channel selected</h2></div>
+      <span id="focusStatus" class="status-badge">Standby</span>
     </div>
-    <p id="connectionText" class="muted small" aria-live="polite">Initializing…</p>
-    <div class="speaker-block" id="speakerBlock">
-      <div class="speaker-label">ON THE AIR</div>
-      <div class="speaker-name" id="speakerName" aria-live="polite">Channel idle</div>
-      <div class="wave" id="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-    </div>
-    <div class="talk-area">
-      <button class="talk-button" id="talkButton" type="button" disabled aria-label="Hold to talk">
-        <svg viewBox="0 0 48 48" width="49" height="49" fill="none" aria-hidden="true"><rect x="18" y="5" width="12" height="26" rx="6" stroke="currentColor" stroke-width="3"/><path d="M11 23a13 13 0 0 0 26 0M24 36v7M16 43h16" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
-        <span id="talkText">WAITING</span>
+    <div class="quick-controls">
+      <button id="quickTalk" class="talk-button compact-talk" type="button" disabled aria-label="Hold to talk on selected channel">
+        <svg viewBox="0 0 48 48" width="42" height="42" fill="none" aria-hidden="true"><rect x="18" y="5" width="12" height="26" rx="6" stroke="currentColor" stroke-width="3"/><path d="M11 23a13 13 0 0 0 26 0M24 36v7M16 43h16" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+        <span id="quickText">HOLD TO TALK</span>
       </button>
-      <p class="small muted" id="talkHint">Waiting for the channel to connect</p>
+      <div class="quick-info">
+        <span class="micro-label">ON THE AIR</span>
+        <strong id="focusSpeaker">Channel idle</strong>
+        <p id="focusHint" class="small muted">Join a channel and select Focus, or use Talk beside any active channel.</p>
+      </div>
     </div>
+  </section>
 
-    <div class="participants-header"><span class="micro-label">ON THIS CHANNEL</span><strong id="participantCount">1 / 6</strong></div>
-    <div class="participants" id="participants"></div>
-    <div class="control-row">
-      <button class="secondary" id="enableAudio" type="button">Enable speaker</button>
-      <button class="secondary" id="reconnect" type="button">Reconnect</button>
-      <button class="secondary danger" id="leave" type="button">Leave</button>
+  <section class="card channel-overview" aria-label="Multi-channel controls">
+    <div class="section-heading">
+      <div><span class="micro-label">SAVED GROUPS</span><h2>My channels</h2></div>
+      <strong id="joinCount" class="counter">0 / 5 active</strong>
     </div>
+    <div class="multi-toolbar">
+      <button class="secondary" id="restoreChannels" type="button">Restore joined</button>
+      <button class="secondary" id="monitorAll" type="button">Monitor all</button>
+      <button class="secondary" id="muteAll" type="button">Mute all</button>
+      <button class="secondary" id="enableSpeakers" type="button">Enable speakers</button>
+    </div>
+    <p id="channelMessage" class="small muted" aria-live="polite">Use Join for each channel you want active. Once joined, it remains connected until you leave or the browser suspends it.</p>
+    <div id="channelList" class="multi-channel-list"></div>
     <div class="divider"></div>
-    <span class="micro-label">RADIO SOUNDS</span>
-    <label class="setting-toggle"><input id="txTone" type="checkbox"> Send a short squawk when I start talking</label>
-    <label class="setting-toggle"><input id="rxTone" type="checkbox"> Play incoming squawks from this channel</label>
-    <p class="muted small">Optional short PTT-start tone for the selected channel only. A tone plays before the speaker microphone turns on.</p>
-    <div class="divider"></div>
-    <span class="micro-label">PERMANENT INVITE LINK</span>
+    <span class="micro-label">ADD A CHANNEL</span>
+    <label for="newChannel">Channel name</label>
     <div class="inline-input">
-      <input type="text" id="inviteLink" readonly aria-label="Saved channel invitation link">
-      <button type="button" id="copyInvite" class="secondary compact">Copy</button>
-      <button type="button" id="shareInvite" class="secondary compact">Share</button>
+      <input id="newChannel" maxlength="36" type="text" placeholder="Patrol • Dispatch • Special Team">
+      <button id="createChannel" class="secondary compact" type="button">Create</button>
     </div>
-    <p id="inviteMessage" class="small muted">This link can be reused each time you meet on this channel.</p>
-    <button type="button" class="text-button" id="switchChannel">Switch or edit channels</button>
+    <label class="setting-toggle"><input id="requirePin" type="checkbox"> Require a channel PIN (4–12 digits)</label>
+    <div id="newPinBox" class="hidden">
+      <label for="newPin">Channel PIN</label>
+      <input id="newPin" type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="12" autocomplete="off" placeholder="Four digits or longer">
+    </div>
+    <p class="small muted">4-digit PINs are convenient but have only 10,000 combinations. Use longer PINs for more resistance to guessing; server-managed permissions are needed for real access control.</p>
   </section>
 
   <section class="card warning">
-    <span class="micro-label">PROTOTYPE • NOT EMERGENCY RADIO</span>
+    <span class="micro-label">PROTOTYPE • PRIVACY LIMITATIONS</span>
     <p id="errorMessage" class="error hidden" role="alert"></p>
-    <p class="small muted">Keep the browser open and screen awake. Saved channels are stored in this browser. PIN protection separates channels but does not replace server-enforced accounts, PIN rate limiting, or role-based permissions. Only join people you trust; avoid sensitive work communications until a dedicated server is deployed.</p>
+    <p class="small muted">Only joined channel members receive that channel's activity and audio. Multiple direct WebRTC calls can be demanding on phones and cellular networks. Background operation is not guaranteed, particularly on iPhone. Shared PINs are not verified user accounts.</p>
+    <div class="backup-links">
+      <a href="./legacy-v4-1.html">Previous single-channel version</a>
+      <a href="./legacy-v3.html">Two-person version</a>
+    </div>
   </section>
-  <footer>Browser-to-browser encrypted voice • Small-group mesh • No recordings or accounts</footer>
+  <footer>WebRTC group radio • Separate channel audio tracks • No recordings</footer>
 </main>
-<div id="audioContainer" aria-hidden="true"></div>
-<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
-<script type="module" src="./app.js?v=4.1.0"></script>
+<div id="remoteAudio" aria-hidden="true"></div>
 </body>
 </html>
