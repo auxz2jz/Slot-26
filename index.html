@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#07131e">
+  <meta name="description" content="Two-person browser walkie-talkie. Share a private invite and hold to talk.">
+  <title>Relay One — Web Walkie-Talkie</title>
+  <style>
+:root{color-scheme:dark;--bg:#07131e;--panel:#102433;--panel-edge:#244050;--muted:#a8bec8;--text:#f2fbff;--accent:#54d6a6;--accent-dark:#0a4f47;--alert:#ffba7c;--danger:#ffaaa9;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+*{box-sizing:border-box}html{min-height:100%;background:var(--bg)}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% 0,#17374a 0,#0b1c2a 41%,var(--bg) 78%);color:var(--text)}.app{width:min(100%,570px);margin:0 auto;padding:32px 18px max(28px,env(safe-area-inset-bottom))}.masthead{display:flex;align-items:center;gap:14px;margin-bottom:24px}.brand-mark{display:grid;place-items:center;width:53px;height:53px;background:var(--accent);border-radius:16px;color:#052621;font-size:35px;font-weight:900}.masthead h1{margin:2px 0 0;font-size:25px;letter-spacing:-.6px}.eyebrow,.micro-label{font-size:11px;letter-spacing:1.5px;font-weight:800;color:var(--accent)}.eyebrow{margin:0}.beta{font-size:12px;margin-left:auto;border:1px solid var(--panel-edge);color:var(--muted);border-radius:30px;padding:6px 10px;white-space:nowrap}.card{margin:13px 0;padding:22px;background:var(--panel);border:1px solid var(--panel-edge);border-radius:20px;box-shadow:0 10px 34px #03101b36}.card h2{font-size:23px;margin:12px 0 9px;letter-spacing:-.45px}.card p{color:var(--muted);line-height:1.5}.setup label{display:block;margin:22px 0 8px;color:#d4e5ea;font-size:14px;font-weight:600}input{background:#071a28;color:var(--text);border:1px solid #38505d;border-radius:11px;padding:13px 12px;font-size:16px;width:100%;min-width:0}input:focus,button:focus-visible{outline:3px solid #80dbfc;outline-offset:2px}button{border:0;cursor:pointer;font-family:inherit;font-weight:800;transition:background .15s,border-color .15s,transform .1s}button:disabled{cursor:not-allowed;opacity:.55}.primary{width:100%;background:var(--accent);color:#05231a;border-radius:12px;padding:17px 12px;font-size:15px;margin-top:17px}.primary:not(:disabled):active{transform:scale(.98)}.small-note{font-size:12px;margin:12px 0 0}.hidden{display:none!important}.radio-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.radio-top h2{font-size:18px}.status-badge{padding:7px 12px;background:#283a48;border-radius:40px;font-size:12px;white-space:nowrap;font-weight:800;color:#d2e2e9}.status-badge.connected{background:#164c3b;color:#9cffd4}.status-badge.busy{background:#654b25;color:#ffdd9e}.connection-text{font-size:14px;margin:6px 0 20px}.wave{height:43px;display:flex;align-items:center;justify-content:center;gap:6px}.wave i{width:5px;height:6px;background:#3d6274;border-radius:5px;transition:background .12s}.wave i:nth-child(2),.wave i:nth-child(8){height:15px}.wave i:nth-child(3),.wave i:nth-child(7){height:25px}.wave i:nth-child(4),.wave i:nth-child(6){height:34px}.wave i:nth-child(5){height:41px}.radio.transmitting .wave i{background:var(--accent);animation:pulse .5s ease-in-out alternate infinite}.radio.receiving .wave i{background:var(--alert);animation:pulse .5s ease-in-out alternate infinite}.wave i:nth-child(even){animation-delay:.16s!important}@keyframes pulse{to{transform:scaleY(.34)}}.talk-area{display:flex;align-items:center;flex-direction:column;margin:17px 0 22px}.talk-button{width:214px;height:214px;border-radius:50%;color:#071f20;background:radial-gradient(circle at 40% 27%,#79e9bc,#38b98b 75%);box-shadow:0 0 0 10px #163b3b,0 0 0 19px #19303b;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;touch-action:none;user-select:none;-webkit-user-select:none}.talk-button span{font-size:16px;letter-spacing:1.5px}.talk-button:disabled{background:#5e7f83;color:#0c242b;box-shadow:0 0 0 10px #193139,0 0 0 19px #19303b}.radio.transmitting .talk-button{background:radial-gradient(circle at 45% 20%,#a5ffcf,#37d5a2);box-shadow:0 0 0 10px #1d694b,0 0 0 19px #163e3d}.radio.receiving .talk-button{background:#d3a06b}.talk-hint{font-size:13px;text-align:center;margin:34px 0 0}.meter-labels{display:flex;justify-content:space-between;gap:10px;margin:12px 0 20px;font-size:12px;color:var(--muted)}.control-row{display:flex;gap:9px}.secondary{flex:1;background:#234257;color:#def3ff;border:1px solid #355973;border-radius:11px;padding:13px 9px;font-size:13px}.secondary.danger{background:#422b37;color:#ffcfcd;border-color:#65434c}.invite-row{display:flex;align-items:center;gap:8px}.invite-row input{font-size:12px}.invite-row button{flex:0}.notice{padding:18px}.notice p{font-size:13px}.error{color:#ffd0c7!important;background:#5a2525;border-radius:10px;padding:12px;word-break:break-word}footer{color:#7493a1;text-align:center;font-size:11px;line-height:1.5;margin-top:22px}@media(max-width:400px){.app{padding-left:12px;padding-right:12px}.card{padding:17px}.talk-button{width:193px;height:193px}.masthead h1{font-size:22px}}@media(prefers-reduced-motion:reduce){.wave i{animation:none!important}button{transition:none}}
+
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="masthead">
+      <div class="brand-mark" aria-hidden="true">◉</div>
+      <div><p class="eyebrow">RELAY ONE / PROTOTYPE</p><h1>Walkie-talkie</h1></div>
+      <span class="beta">2 users</span>
+    </header>
+
+    <section class="card setup" id="setupPanel" aria-labelledby="setupHeading">
+      <span class="micro-label">YOUR CHANNEL</span>
+      <h2 id="setupHeading">Ready to connect?</h2>
+      <p id="setupCopy">Create a private channel, then share its invite link with one other person.</p>
+      <label for="displayName">Your display name</label>
+      <input id="displayName" type="text" maxlength="30" autocomplete="nickname" placeholder="e.g. Officer One" value="User">
+      <button class="primary" id="joinButton" type="button">Create channel &amp; enable microphone</button>
+      <p class="small-note">Microphone permission is required. No account is needed for this test.</p>
+    </section>
+
+    <section class="card radio hidden" id="radioPanel" aria-label="Radio controls">
+      <div class="radio-top">
+        <div><span class="micro-label">CHANNEL STATUS</span><h2 id="channelTitle">Private channel</h2></div>
+        <span id="statusBadge" class="status-badge" role="status">Starting…</span>
+      </div>
+      <p class="connection-text" id="connectionText" aria-live="polite">Initializing microphone…</p>
+      <div class="wave" id="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="talk-area">
+        <button id="talkButton" class="talk-button" type="button" disabled aria-label="Hold to talk">
+          <svg viewBox="0 0 48 48" width="49" height="49" fill="none" aria-hidden="true"><rect x="18" y="5" width="12" height="26" rx="6" stroke="currentColor" stroke-width="3"/><path d="M11 23a13 13 0 0 0 26 0M24 36v7M16 43h16" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+          <span id="talkText">WAITING</span>
+        </button>
+        <p id="talkHint" class="talk-hint">Wait for the other person to join</p>
+      </div>
+      <div class="meter-labels"><span id="myName">You</span><span id="otherName">Other user: waiting</span></div>
+      <div class="control-row"><button type="button" id="enableAudioButton" class="secondary">Enable speaker</button><button type="button" id="leaveButton" class="secondary danger">Leave channel</button></div>
+    </section>
+
+    <section class="card invite hidden" id="invitePanel">
+      <span class="micro-label">INVITE ONE OTHER PERSON</span>
+      <p>Open this same page on another device using the private link below.</p>
+      <div class="invite-row"><input id="inviteLink" type="text" readonly aria-label="Private channel invite link"><button id="copyButton" type="button" class="secondary">Copy</button></div>
+      <p id="copyMessage" class="small-note" aria-live="polite">Anyone with this link can join. Share it privately.</p>
+    </section>
+
+    <section class="card notice" aria-label="Important notes">
+      <span class="micro-label">TEST VERSION</span>
+      <p>Keep this page open and your device awake during the test. Wear headphones when testing two devices near each other to prevent feedback. A secure HTTPS page is needed for microphone access.</p>
+      <p id="errorMessage" class="error hidden" role="alert"></p>
+    </section>
+    <footer>Browser-to-browser encrypted voice • No recording • Prototype only, not for emergency communications</footer>
+  </main>
+  <audio id="remoteAudio" autoplay playsinline></audio>
+  <script>
+// Leave peerServer as null to use PeerJS's public cloud signaling for the demo.
+// When you deploy your own PeerServer, see server/README.md.
+window.RELAY_CONFIG = {
+  peerServer: null,
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]
+};
+
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+  <script type="module">
+const ROOM_PATTERN = /^[0-9a-f]{32}$/;
+function validRoom(input) { return typeof input === 'string' && ROOM_PATTERN.test(input); }
+function newRoom(cryptoSource = globalThis.crypto) {
+  if (!cryptoSource || typeof cryptoSource.getRandomValues !== 'function') {
+    throw new Error('Secure random numbers are unavailable. Open this page over HTTPS.');
+  }
+  const bytes = new Uint8Array(16);
+  cryptoSource.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+function peerId(room, role) {
+  if (!validRoom(room) || !['a', 'b'].includes(role)) throw new Error('Invalid room or role');
+  return `relay-one-${room}-${role}`;
+}
+function cleanName(value) {
+  const name = String(value ?? '').replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 30);
+  return name || 'User';
+}
+function inviteUrl(href, room) {
+  if (!validRoom(room)) throw new Error('Invalid room');
+  const url = new URL(href);
+  url.searchParams.set('room', room);
+  url.hash = '';
+  return url.toString();
+}
+
+
+const $ = id => document.getElementById(id);
+const ui = {
+  setup: $('setupPanel'), radio: $('radioPanel'), invite: $('invitePanel'),
+  name: $('displayName'), join: $('joinButton'), setupHeading: $('setupHeading'), setupCopy: $('setupCopy'),
+  badge: $('statusBadge'), status: $('connectionText'), title: $('channelTitle'),
+  talk: $('talkButton'), talkText: $('talkText'), hint: $('talkHint'),
+  mine: $('myName'), other: $('otherName'), audio: $('remoteAudio'),
+  enableAudio: $('enableAudioButton'), leave: $('leaveButton'), link: $('inviteLink'),
+  copy: $('copyButton'), copyMessage: $('copyMessage'), error: $('errorMessage')
+};
+
+const qs = new URLSearchParams(location.search);
+const incomingRoom = qs.get('room');
+let room = validRoom(incomingRoom) ? incomingRoom : null;
+let role = null;
+let peer = null;
+let dataConn = null;
+let mediaConn = null;
+let microphone = null;
+let remoteStream = null;
+let remoteName = 'Other user';
+let myName = 'User';
+let talking = false;
+let remoteTalking = false;
+let searchingTimer = null;
+let session = 0;
+let joining = false;
+let leaving = false;
+
+if (room) {
+  ui.setupHeading.textContent = 'Join private channel';
+  ui.setupCopy.textContent = 'Someone shared this channel with you. Enter a name and allow the microphone to connect.';
+  ui.join.textContent = 'Join channel & enable microphone';
+} else if (incomingRoom !== null) {
+  showError('That invitation link is invalid. Create a fresh channel instead.');
+}
+
+function showError(message) {
+  ui.error.textContent = message;
+  ui.error.classList.remove('hidden');
+}
+function clearError() {
+  ui.error.textContent = '';
+  ui.error.classList.add('hidden');
+}
+function status(message, badge='Waiting', kind='') {
+  ui.status.textContent = message;
+  ui.badge.textContent = badge;
+  ui.badge.className = 'status-badge' + (kind ? ` ${kind}` : '');
+}
+function active() { return Boolean(dataConn?.open && mediaConn?.open && remoteStream); }
+function send(message) {
+  if (!dataConn?.open) return;
+  try { dataConn.send(message); } catch (err) { console.warn('Data send failed', err); }
+}
+function render() {
+  const ready = active();
+  ui.radio.classList.toggle('transmitting', talking);
+  ui.radio.classList.toggle('receiving', remoteTalking && !talking);
+  ui.talk.disabled = !ready || remoteTalking;
+  ui.mine.textContent = `${myName} (you)`;
+  ui.other.textContent = ready ? `${remoteName} (connected)` : 'Other user: waiting';
+  if (talking) {
+    ui.talkText.textContent = 'TRANSMITTING';
+    ui.hint.textContent = 'Release to stop talking';
+    status(`You are talking to ${remoteName}`, 'Talking', 'connected');
+  } else if (remoteTalking && ready) {
+    ui.talkText.textContent = 'RECEIVING';
+    ui.hint.textContent = `${remoteName} is speaking`;
+    status(`Receiving from ${remoteName}`, 'Receiving', 'busy');
+  } else if (ready) {
+    ui.talkText.textContent = 'HOLD TO TALK';
+    ui.hint.textContent = 'Hold the button to speak. Release to listen. (Space also works.)';
+    status(`${remoteName} connected • Radio ready`, 'Connected', 'connected');
+  } else {
+    ui.talkText.textContent = 'WAITING';
+    ui.hint.textContent = 'Keep this page open while waiting for the other person';
+    if (microphone) status('Waiting for the other device to connect…', 'Waiting');
+  }
+}
+function stopTalking() {
+  if (!talking) return;
+  talking = false;
+  if (microphone) microphone.getAudioTracks().forEach(t => { t.enabled = false; });
+  send({type:'ptt', active:false});
+  render();
+}
+function startTalking() {
+  if (!active() || remoteTalking || talking) return;
+  talking = true;
+  microphone?.getAudioTracks().forEach(t => { t.enabled = true; });
+  send({type:'ptt', active:true});
+  render();
+}
+function resetConnections() {
+  stopTalking();
+  remoteTalking = false;
+  remoteStream = null;
+  ui.audio.srcObject = null;
+  const dc = dataConn; dataConn = null;
+  const mc = mediaConn; mediaConn = null;
+  try { dc?.close(); } catch {}
+  try { mc?.close(); } catch {}
+  remoteName = 'Other user';
+  render();
+}
+function attachMedia(call, current) {
+  if (current !== session || !call) return;
+  if (mediaConn && mediaConn !== call) {
+    try { call.close(); } catch {}
+    return;
+  }
+  mediaConn = call;
+  call.on('stream', stream => {
+    if (current !== session || mediaConn !== call) return;
+    remoteStream = stream;
+    ui.audio.srcObject = stream;
+    ui.audio.play().catch(() => {
+      ui.enableAudio.textContent = 'Tap to hear audio';
+      showError('Your browser blocked automatic sound. Tap “Tap to hear audio.”');
+    });
+    render();
+  });
+  call.on('close', () => {
+    if (current !== session || mediaConn !== call) return;
+    mediaConn = null;
+    remoteStream = null;
+    remoteTalking = false;
+    stopTalking();
+    ui.audio.srcObject = null;
+    render();
+    // Reconnect the media stream if the data channel remains alive.
+    if (role === 'b' && dataConn?.open) scheduleRedial(current);
+  });
+  call.on('error', err => {
+    if (current !== session) return;
+    console.warn('Media connection error', err);
+    if (mediaConn === call) { mediaConn = null; remoteStream = null; stopTalking(); render(); }
+    if (role === 'b' && dataConn?.open) scheduleRedial(current);
+  });
+}
+let redialTimer = null;
+function scheduleRedial(current) {
+  if (redialTimer) clearTimeout(redialTimer);
+  redialTimer = setTimeout(() => {
+    redialTimer = null;
+    if (current === session && role === 'b' && dataConn?.open && !mediaConn) initiateMedia(current);
+  }, 1400);
+}
+function initiateMedia(current) {
+  if (current !== session || mediaConn || !dataConn?.open || !peer?.open || !microphone) return;
+  try { attachMedia(peer.call(peerId(room, 'a'), microphone), current); }
+  catch (err) { console.warn('Unable to start media call', err); scheduleRedial(current); }
+}
+function attachData(connection, current) {
+  if (current !== session || !connection) return;
+  if (dataConn && dataConn !== connection && dataConn.open) {
+    connection.close();
+    return;
+  }
+  dataConn = connection;
+  connection.on('open', () => {
+    if (current !== session || dataConn !== connection) return;
+    send({type:'hello', name:myName});
+    if (role === 'b') initiateMedia(current);
+    render();
+  });
+  connection.on('data', payload => {
+    if (current !== session || dataConn !== connection || !payload || typeof payload !== 'object') return;
+    if (payload.type === 'hello') {
+      remoteName = cleanName(payload.name);
+      if (role === 'a') send({type:'hello', name:myName});
+    }
+    if (payload.type === 'ptt') {
+      remoteTalking = payload.active === true;
+      // If both press simultaneously, first role wins the tie.
+      if (remoteTalking && talking && role === 'b') stopTalking();
+    }
+    render();
+  });
+  connection.on('close', () => {
+    if (current !== session || dataConn !== connection) return;
+    resetConnections();
+  });
+  connection.on('error', err => {
+    if (current !== session || dataConn !== connection) return;
+    console.warn('Data connection failed', err?.type || err);
+    resetConnections();
+  });
+}
+function searchForFirstUser(current) {
+  // Role b is the second user; it initiates connections to role a.
+  if (searchingTimer) clearInterval(searchingTimer);
+  searchingTimer = setInterval(() => {
+    if (current !== session || !peer?.open || role !== 'b' || dataConn) return;
+    try { attachData(peer.connect(peerId(room, 'a'), {reliable:true, serialization:'json'}), current); }
+    catch (err) { console.warn('Connection attempt failed', err); }
+  }, 2400);
+}
+function initializePeer(desiredRole, current) {
+  if (current !== session) return;
+  role = desiredRole;
+  const config = window.RELAY_CONFIG || {};
+  const opts = {debug:0, config:{iceServers:config.iceServers || [{urls:'stun:stun.l.google.com:19302'}]}};
+  if (config.peerServer) Object.assign(opts, config.peerServer);
+  peer = new window.Peer(peerId(room, role), opts);
+  const thisPeer = peer;
+  thisPeer.on('open', () => {
+    if (current !== session || peer !== thisPeer) return;
+    joining = false;
+    render();
+    if (role === 'b') {
+      searchForFirstUser(current);
+      // Don't make the user wait for the polling interval for the first attempt.
+      try { attachData(thisPeer.connect(peerId(room, 'a'), {reliable:true, serialization:'json'}), current); }
+      catch (err) { console.warn('First connection attempt failed', err); }
+    }
+  });
+  thisPeer.on('connection', connection => {
+    if (current !== session || peer !== thisPeer) { connection.close(); return; }
+    if (role !== 'a' || connection.peer !== peerId(room, 'b')) { connection.close(); return; }
+    attachData(connection, current);
+  });
+  thisPeer.on('call', call => {
+    if (current !== session || peer !== thisPeer) { call.close(); return; }
+    if (role !== 'a' || call.peer !== peerId(room, 'b') || !microphone) { call.close(); return; }
+    attachMedia(call, current);
+    try { call.answer(microphone); } catch (err) { console.warn('Cannot answer call', err); }
+  });
+  thisPeer.on('disconnected', () => {
+    if (current !== session || peer !== thisPeer) return;
+    resetConnections();
+    try { thisPeer.reconnect(); } catch (err) { console.warn('Reconnect failed', err); }
+  });
+  thisPeer.on('error', err => {
+    if (current !== session || peer !== thisPeer) return;
+    if (err.type === 'unavailable-id' && desiredRole === 'a') {
+      try { thisPeer.destroy(); } catch {}
+      peer = null;
+      initializePeer('b', current);
+      return;
+    }
+    if (err.type === 'unavailable-id') {
+      showError('This channel already has two people. Ask the other person to leave or create a new channel.');
+      void leave(false);
+      return;
+    }
+    if (err.type === 'peer-unavailable') {
+      // A connect attempt to a vanished first device may fail on Peer rather than DataConnection.
+      if (role === 'b' && dataConn && !dataConn.open) resetConnections();
+      return;
+    }
+    console.warn('Peer error', err);
+    showError(`Connection error (${err.type || 'unknown'}). Check internet connectivity and try joining again.`);
+    if (['browser-incompatible','invalid-id','ssl-unavailable','server-error','network','socket-error'].includes(err.type)) void leave(false);
+  });
+  thisPeer.on('close', () => {
+    if (current !== session || peer !== thisPeer) return;
+    resetConnections();
+  });
+}
+async function join() {
+  if (joining || microphone) return;
+  joining = true;
+  leaving = false;
+  clearError();
+  ui.join.disabled = true;
+  ui.join.textContent = 'Connecting…';
+  myName = cleanName(ui.name.value);
+  const current = ++session;
+  try {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      throw new Error('Microphone access requires HTTPS (or localhost) and a supported browser.');
+    }
+    if (typeof window.Peer !== 'function') throw new Error('The PeerJS library did not load. Check your internet connection.');
+    room ||= newRoom();
+    ui.link.value = inviteUrl(location.href, room);
+    history.replaceState(null, '', ui.link.value);
+    status('Requesting microphone permission…', 'Starting');
+    microphone = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}, video:false});
+    if (current !== session) { microphone.getTracks().forEach(t => t.stop()); microphone=null; return; }
+    microphone.getAudioTracks().forEach(t => { t.enabled = false; });
+    microphone.getAudioTracks().forEach(t => {
+      t.onended = () => { stopTalking(); showError('Microphone disconnected. Leave and rejoin to reconnect it.'); };
+    });
+    ui.setup.classList.add('hidden');
+    ui.radio.classList.remove('hidden');
+    ui.invite.classList.remove('hidden');
+    render();
+    initializePeer('a', current);
+  } catch (err) {
+    showError(err?.message || 'Unable to join the channel.');
+    await leave(false);
+  } finally {
+    joining = false;
+    ui.join.disabled = false;
+    ui.join.textContent = room ? 'Join channel & enable microphone' : 'Create channel & enable microphone';
+  }
+}
+async function leave(clearErrors=true) {
+  if (leaving) return;
+  leaving = true;
+  ++session;
+  if (searchingTimer) clearInterval(searchingTimer);
+  searchingTimer = null;
+  if (redialTimer) clearTimeout(redialTimer);
+  redialTimer = null;
+  stopTalking();
+  resetConnections();
+  try { peer?.destroy(); } catch {}
+  peer = null;
+  try { microphone?.getTracks().forEach(t => t.stop()); } catch {}
+  microphone = null;
+  role = null;
+  remoteTalking = false;
+  talking = false;
+  joining = false;
+  ui.radio.classList.add('hidden');
+  ui.invite.classList.add('hidden');
+  ui.setup.classList.remove('hidden');
+  if (clearErrors) clearError();
+  ui.join.disabled = false;
+  ui.join.textContent = room ? 'Join channel & enable microphone' : 'Create channel & enable microphone';
+  leaving = false;
+}
+ui.join.addEventListener('click', join);
+ui.leave.addEventListener('click', () => leave());
+ui.talk.addEventListener('pointerdown', event => {
+  if (event.button !== 0 && event.pointerType === 'mouse') return;
+  event.preventDefault();
+  try { ui.talk.setPointerCapture(event.pointerId); } catch {}
+  startTalking();
+});
+for (const name of ['pointerup','pointercancel','lostpointercapture']) ui.talk.addEventListener(name, stopTalking);
+window.addEventListener('pointerup', stopTalking);
+window.addEventListener('blur', stopTalking);
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopTalking(); });
+ui.talk.addEventListener('contextmenu', event => event.preventDefault());
+window.addEventListener('keydown', event => {
+  if (event.code !== 'Space' || event.repeat || ['INPUT','TEXTAREA','BUTTON'].includes(document.activeElement?.tagName)) return;
+  event.preventDefault(); startTalking();
+});
+window.addEventListener('keyup', event => { if (event.code === 'Space') stopTalking(); });
+ui.enableAudio.addEventListener('click', async () => {
+  try { await ui.audio.play(); ui.enableAudio.textContent = 'Speaker enabled'; clearError(); }
+  catch { showError('Audio playback was blocked. Check speaker volume and browser permissions.'); }
+});
+ui.copy.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(ui.link.value);
+    ui.copyMessage.textContent = 'Invite link copied. Send it privately to the other user.';
+  } catch {
+    ui.link.focus(); ui.link.select();
+    ui.copyMessage.textContent = 'Select and copy the highlighted link to share it.';
+  }
+});
+window.addEventListener('pagehide', () => {
+  microphone?.getAudioTracks().forEach(t => { t.enabled = false; });
+  try { peer?.destroy(); } catch {}
+});
+
+  </script>
+</body>
+</html>
