@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#081824">
+<meta name="description" content="Relay One: ten shared radio channels with multi-channel monitoring and group-only push-to-talk.">
+<title>Relay One — Shared Radio Channels</title>
+<link rel="stylesheet" href="./styles.css?v=4.1.0">
+<link rel="stylesheet" href="./multi.css?v=6.0.0">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
+<script type="module" src="./multi-radio.js?v=6.0.0"></script>
+</head>
+<body>
+<main class="app multi-app">
+  <header class="masthead">
+    <div class="brand-mark" aria-hidden="true">◉</div>
+    <div><p class="eyebrow">RELAY ONE / TEN-CHANNEL V6</p><h1>Group radio</h1></div>
+    <span class="version">10 channels</span>
+  </header>
+
+  <section class="card" aria-label="User settings">
+    <div class="section-heading">
+      <div><span class="micro-label">MY RADIO</span><h2>Profile &amp; sounds</h2></div>
+      <span class="secondary-text">Saved on this device</span>
+    </div>
+    <label for="displayName">Name / callsign</label>
+    <input id="displayName" type="text" maxlength="30" autocomplete="nickname" placeholder="Patrol 1">
+    <label for="colors">Display color</label>
+    <div id="colors" class="colors" role="group" aria-label="Choose your color"></div>
+    <div class="settings-grid">
+      <label class="setting-toggle"><input id="txTone" type="checkbox"> Squawk before I transmit</label>
+      <label class="setting-toggle"><input id="rxTone" type="checkbox"> Hear incoming squawks</label>
+      <label class="setting-toggle"><input id="alertTone" type="checkbox"> Hear channel call alerts</label>
+    </div>
+  </section>
+
+  <section class="card quick-panel" aria-label="Quick push-to-talk">
+    <div class="section-heading">
+      <div><span class="micro-label">QUICK RADIO</span><h2 id="focusTitle">No channel selected</h2></div>
+      <span id="focusStatus" class="status-badge">Standby</span>
+    </div>
+    <div class="quick-controls">
+      <button id="quickTalk" class="talk-button compact-talk" type="button" disabled aria-label="Hold to talk on selected channel">
+        <svg viewBox="0 0 48 48" width="42" height="42" fill="none" aria-hidden="true"><rect x="18" y="5" width="12" height="26" rx="6" stroke="currentColor" stroke-width="3"/><path d="M11 23a13 13 0 0 0 26 0M24 36v7M16 43h16" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+        <span id="quickText">HOLD TO TALK</span>
+      </button>
+      <div class="quick-info">
+        <span class="micro-label">ON THE AIR</span>
+        <strong id="focusSpeaker">Channel idle</strong>
+        <p id="focusHint" class="small muted">Check channels below to join. Choose Focus for the large talk button.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card channel-overview" aria-label="Available radio channels">
+    <div class="section-heading">
+      <div><span class="micro-label">SHARED RADIO CHANNELS</span><h2>Choose your channels</h2></div>
+      <strong id="joinCount" class="counter">0 / 5 joined</strong>
+    </div>
+    <p class="small muted">Everyone has the same ten numbered channels. Check the channels you want to join. Channels 01–05 are open; Channels 06–10 require their four-digit PIN. There is no link to send and no channel to create.</p>
+    <div class="multi-toolbar">
+      <button class="secondary" id="restoreChannels" type="button">Restore selected</button>
+      <button class="secondary" id="monitorAll" type="button">Monitor joined</button>
+      <button class="secondary" id="muteAll" type="button">Mute joined</button>
+      <button class="secondary" id="enableSpeakers" type="button">Enable speakers</button>
+    </div>
+    <p id="channelMessage" class="small muted" aria-live="polite">Join up to five channels at once. Each talk button transmits only to its own channel.</p>
+    <div id="channelList" class="multi-channel-list"></div>
+  </section>
+
+  <section class="card warning">
+    <span class="micro-label">DEMO RADIO • NOT AUTHENTICATED WORK COMMUNICATIONS</span>
+    <p id="errorMessage" class="error hidden" role="alert"></p>
+    <p class="small muted">Only channels you've joined receive audio, participant names, calls, and on-air activity. Monitoring a channel requires joining it. Channel 06–10 PIN checks are performed by this public browser app and can be bypassed; a real administrator/employee system requires a separate server with login and server-enforced permissions.</p>
+    <div class="backup-links">
+      <a href="./legacy-v5.html">Previous version (custom channels)</a>
+      <a href="./legacy-v4-1.html">Earlier single-channel version</a>
+    </div>
+  </section>
+
+  <footer>Encrypted WebRTC voice • Per-channel talk and monitoring • Working prototype</footer>
+</main>
+<div id="remoteAudio" aria-hidden="true"></div>
+</body>
+</html>
