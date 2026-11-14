@@ -199,6 +199,7 @@ ui.muteAll.addEventListener('click',()=>{for(const c of channels)setMonitor(c.id
 function startPTT(s){
   if(!s || !s.ready() || selectedTx && selectedTx!==s || s.floor && s.floor!==s.myId)return;
   unlockSound();selectedTx=s;s.wantTalk=true;
+  for(const other of sessions.values())other.applyAudioOutput();
   if(s.isHost){if(!s.floor)s.setFloor(s.myId,profile.txTone);}
   else s.send(s.hostId(),{type:'request',tone:profile.txTone});
   updateAll();
@@ -207,6 +208,7 @@ function releaseTalk(s){
   if(!s)return;
   s.wantTalk=false;s.disableTransmit();
   if(selectedTx===s)selectedTx=null;
+  for(const other of sessions.values())other.applyAudioOutput();
   if(s.isHost){if(s.floor===s.myId)s.setFloor(null);}
   else if(s.ready())s.send(s.hostId(),{type:'release'});
   updateAll();
@@ -266,11 +268,19 @@ class ChannelSession{
     this.broadcast({type:'roster',people:joined,floor:this.floor});
     updateRow(this.publicId);
   }
+  applyAudioOutput(){
+    // Don't acoustically rebroadcast another monitored channel while transmitting.
+    const audible=this.monitor && (!selectedTx || selectedTx===this);
+    for(const m of this.members.values()){
+      if(m.audio){
+        m.audio.muted=!audible;
+        if(audible)m.audio.play().catch(()=>{});
+      }
+    }
+  }
   setMonitor(enabled){
     this.monitor=!!enabled;
-    for(const m of this.members.values()){
-      if(m.audio){m.audio.muted=!this.monitor;if(this.monitor)m.audio.play().catch(()=>{});}
-    }
+    this.applyAudioOutput();
     updateRow(this.publicId);
   }
   disableTransmit(){
@@ -538,10 +548,10 @@ class ChannelSession{
       m.stream=stream;
       if(!m.audio){
         const a=document.createElement('audio');a.autoplay=true;a.playsInline=true;a.setAttribute('playsinline','');
-        a.muted=!this.monitor;a.dataset.channel=this.publicId;a.dataset.peer=call.peer;
+        a.muted=!(this.monitor && (!selectedTx || selectedTx===this));a.dataset.channel=this.publicId;a.dataset.peer=call.peer;
         ui.audio.appendChild(a);m.audio=a;
       }
-      m.audio.muted=!this.monitor;m.audio.srcObject=stream;
+      m.audio.muted=!(this.monitor && (!selectedTx || selectedTx===this));m.audio.srcObject=stream;
       m.audio.play().catch(()=>{this.note='Tap Enable speaker in your browser if audio is blocked.';});
       updateRow(this.publicId);
     });
