@@ -1,47 +1,57 @@
-# Relay One — Browser Walkie-Talkie
+# Relay One — Browser Walkie-Talkie (Slot-26)
 
-A simple **two-person push-to-talk web app** for testing between phones, tablets, and desktop browsers. This repository is the **Slot-26 prototype**, not the future authenticated work radio.
+Two-person, browser-based, **push-to-talk** voice prototype. The single file [index.html](index.html) is ready for GitHub Pages. No build tooling or accounts are needed for this test.
 
-## Try it on two devices
+## Published site
 
-The complete app is in **[index.html](index.html)**. No build tooling or hosting server is required for the static page; GitHub Pages can serve it over HTTPS.
+Once GitHub Pages is enabled for the `main` branch at `/(root)`, open:
+**https://auxz2jz.github.io/Slot-26/**
 
-### Publish using GitHub Pages
+If you have not yet enabled it: [Settings → Pages](https://github.com/auxz2jz/Slot-26/settings/pages) → **Deploy from a branch** → **main** → **/(root)** → **Save**.
 
-1. Open [this repository's Pages settings](https://github.com/auxz2jz/Slot-26/settings/pages).
-2. Under **Build and deployment**, set **Source: Deploy from a branch**.
-3. Choose **main**, then **/(root)** and click **Save**.
-4. After GitHub reports a successful Pages deployment, open **https://auxz2jz.github.io/Slot-26/**. The URL does not work until Pages is activated.
+## Recommended two-phone setup (v2)
 
-### Connect
+**On Phone 1 — channel owner**
 
-1. On device A, open the published page, enter a display name, and tap **Create channel & enable microphone**.
-2. Allow microphone access, then tap **Copy** to share the private invitation link.
-3. On device B, open that *exact* link in a supported browser. Enter a name and tap **Join channel & enable microphone**.
-4. After both show **Connected**, press and **hold** the big microphone button to speak, and release to listen.
-5. If the receiving device is silent, tap **Enable speaker**, and check volume/audio output.
+1. Open the website in Chrome or another supported browser.
+2. Tap **Get invite link before connecting**. Do this **before** activating the microphone.
+3. Tap **Copy** or **Share** and text that exact invitation to Phone 2.
+4. Return to the webpage and tap **Start radio & enable microphone**. Allow the microphone.
+5. Leave the webpage foregrounded, with the screen on, for the best results.
 
-For a realistic test, put one phone on Wi-Fi and another on cellular. Keep the browsers foregrounded and screens awake. If testing nearby, use headphones to avoid feedback.
+**On Phone 2 — invited visitor**
 
-## How it works
+1. Open the link received by text (ideally directly in Chrome, not inside an in-app browser).
+2. Enter your name and tap **Join channel & enable microphone**.
+3. Allow microphone permissions, then wait until both phones show **Connected**.
+4. **Hold to talk, release to listen.** Use the Enable speaker control if the sound does not play.
 
-- WebRTC sends **encrypted peer-to-peer audio** between browsers.
-- The external, free **PeerJS Cloud** service is used for connection signaling, and public STUN servers assist with NAT traversal.
-- Only **one other participant** can join a given randomly generated invitation room.
-- Local microphone tracks start muted and are enabled only while you hold push-to-talk.
-- There is no database, account requirement, audio recording, or paid server for this prototype.
+For a meaningful internet test, put one phone on Wi-Fi and the other on cellular. If testing nearby, use headphones to avoid feedback.
 
-## Important limitations
+## Connection recovery in v2
 
-- This is **not** an emergency radio or a security-grade work communication system.
-- The room URL is a **bearer invitation**: anyone who has it may try joining. Do not share sensitive workplace details.
-- PeerJS Cloud is third-party infrastructure and has no service guarantee.
-- Without a TURN relay, some cellular/corporate network combinations may fail. A dedicated work version needs TURN and authenticated signaling.
-- Mobile browsers may interrupt audio when the screen locks, the tab is backgrounded, or the OS reclaims the microphone.
-- The prototype doesn't provide server-enforced channel arbitration, dispatcher features, or user accounts.
+- The owner has a reserved channel host ID; each visitor now receives a **fresh temporary ID** when reconnecting. A previous visitor's stale ID no longer falsely claims the second seat.
+- The owner allows only **one responsive visitor at a time**. A visitor whose connection has not responded for approximately **12 seconds** is released. An additional real, connected visitor is not displaced.
+- Both devices exchange periodic ping/pong messages to detect dead connections.
+- The app retries signaling after temporary network trouble or returning to the foreground.
+- There is a manual **Reconnect** button if mobile network recovery stalls.
+- If a previous *owner* session is still occupying the host ID on the external signaling server, the app retries claiming it. This can take time until the old server session expires.
+- Use **Leave** and then **Start radio** to reset microphone permission/session state if necessary.
 
-## Next stage
+The owner URL contains `host=1`; the copied visitor invitation does **not**. **Share only the link provided by the Copy/Share buttons**, not the address bar URL from the owner's page.
 
-Once both devices work, we can extend Slot-26 with user authentication, persistent channels, dispatcher administration, a dedicated WebRTC signaling/TURN server, better reconnection, and communication auditing, with proper privacy controls.
+## Privacy and limitations
 
-**Source note:** This repository uses a complete standalone `index.html` containing the HTML, CSS, and JavaScript. It loads PeerJS version 1.5.5 from a CDN. The optional local-development files and test utilities are available in the source archive from the original project draft.
+- WebRTC transports encrypted audio browser-to-browser; public PeerJS Cloud handles connection signaling and public STUN servers help establish a direct connection.
+- This demo has **no authentication**. Anyone with the invitation can attempt to enter a channel, and the owner URL is not a secure credential.
+- Some Wi-Fi/cellular combinations require a TURN relay. The prototype does not configure one, so connectivity is not guaranteed on every network.
+- Mobile browsers may throttle or suspend pages in the background or with screens locked, interrupting audio and signaling.
+- Do not use this as an emergency communications system, or for sensitive workplace traffic. This is a proof-of-concept test, not a production radio network.
+
+## Planned work version
+
+Dedicated authenticated signaling and TURN servers, user login, channel membership/permissions, dispatcher functions, reconnect management, and testing on the actual employee devices.
+
+## Testing status
+
+The JavaScript syntax was checked using Node.js. A two-device event simulation verified that two participants connect, a third cannot enter while the channel is occupied, invitation links can be created before joining, and a returning visitor gets a new ID. **Real phone-to-phone audio/network behavior must still be tested.**
