@@ -18,12 +18,15 @@ const ui = {
   dataSessionTotal:$('dataSessionTotal'),dataSessionBreakdown:$('dataSessionBreakdown'),
   dataSavedTotal:$('dataSavedTotal'),dataSavedBreakdown:$('dataSavedBreakdown'),
   dataCurrentRate:$('dataCurrentRate'),resetDataSaved:$('resetDataSaved'),
-  compactLayout:$('compactLayout'),detailedLayout:$('detailedLayout')
+  compactLayout:$('compactLayout'),detailedLayout:$('detailedLayout'),
+  basicMode:$('basicMode'),advancedMode:$('advancedMode'),
+  radioModeHelp:$('radioModeHelp'),channelModeBadge:$('channelModeBadge')
 };
 const PROFILE_KEY='relay-one.profile.v4';
 const MONITOR_KEY='relay-one.monitor.v5';
 const ACTIVE_KEY='relay-one.joined.v5';
 const LAYOUT_KEY='relay-one.layout.v6.2';
+const RADIO_MODE_KEY='relay-one.radio-mode.v6.3';
 const MAX_ACTIVE=MAX_SELECTED_CHANNELS, PING_EVERY=5000, STALE_AFTER=40000, PENDING_AFTER=10000;
 const storeGet=(key,defaultValue)=>{try{return JSON.parse(localStorage.getItem(key))??defaultValue;}catch{return defaultValue;}};
 const storeSet=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{}};
@@ -42,6 +45,44 @@ const desiredJoined=new Set((Array.isArray(storeGet(ACTIVE_KEY,[]))?storeGet(ACT
 const pinCache=new Map(); // Volatile only: never persisted to localStorage or links.
 const sessions=new Map(); // public channel ID -> independent ChannelSession
 const rows=new Map();
+let radioMode=storeGet(RADIO_MODE_KEY,'basic')==='advanced'?'advanced':'basic';
+const modeAllows=c=>Boolean(c) && (radioMode==='advanced'||c.number<=2);
+const maxActiveChannels=()=>radioMode==='basic'?2:MAX_ACTIVE;
+function renderMode(){
+  if(ui.basicMode)ui.basicMode.setAttribute('aria-pressed',String(radioMode==='basic'));
+  if(ui.advancedMode)ui.advancedMode.setAttribute('aria-pressed',String(radioMode==='advanced'));
+  if(ui.channelModeBadge)ui.channelModeBadge.textContent=radioMode==='basic'?'2 channels':'10 channels';
+  if(ui.radioModeHelp)ui.radioModeHelp.textContent=radioMode==='basic'
+    ?'Basic: Channels 01 and 02 only. Switch to Advanced for all ten channels. Mode controls this device only; it is not a login or access restriction.'
+    :'Advanced: all ten shared channels. Channels 01–05 are open; 06–10 use demonstration PINs. Join up to five channels. Mode is not access control.';
+}
+function switchMode(nextMode){
+  if(nextMode!=='basic' && nextMode!=='advanced' || nextMode===radioMode)return;
+  radioMode=nextMode;storeSet(RADIO_MODE_KEY,radioMode);
+  let disconnected=0;
+  if(radioMode==='basic'){
+    for(const s of [...sessions.values()]){
+      if(!modeAllows(s.room)){leaveChannel(s.publicId);disconnected++;}
+    }
+    // Do not leave selected-but-disconnected channels invisibly queued for restoration.
+    let selectionChanged=false;
+    for(const id of [...desiredJoined]){
+      if(!modeAllows(storedRoom(id))){desiredJoined.delete(id);selectionChanged=true;}
+    }
+    if(selectionChanged)persistDesired();
+    if(focusedId && !modeAllows(storedRoom(focusedId)))focusedId=sessions.keys().next().value||null;
+  }
+  renderMode();updateAll();
+  setMessage(nextMode==='basic'
+    ?'Basic mode: Channels 01–02. '+(disconnected
+      ?'Disconnected '+disconnected+' other channel(s); switch to Advanced to rejoin.'
+      :'Only two channels are shown.')
+    :'Advanced mode: all ten channels are available; join up to five.');
+  logRadio('RADIO MODE','',nextMode+'; disconnected '+disconnected);
+}
+ui.basicMode?.addEventListener('click',()=>switchMode('basic'));
+ui.advancedMode?.addEventListener('click',()=>switchMode('advanced'));
+renderMode();
 const usageMeter=new WebRTCUsageMeter(localStorage);
 const compactPreference=storeGet(LAYOUT_KEY,'compact');
 let compactLayout=compactPreference!=='detailed';
@@ -107,7 +148,8 @@ function diagnosticReport(){
       ', voice '+audio+'/'+peers.length+', ICE '+ice;
   });
   const data=usageMeter.snapshot();
-  return ['Relay One V6.2 connection diagnostics',
+  return ['Relay One V6.3 connection diagnostics',
+    'Radio mode: '+radioMode,
     'Estimated WebRTC session: sent '+formatDataBytes(data.session.tx)+', received '+formatDataBytes(data.session.rx),
     'Estimated saved: sent '+formatDataBytes(data.saved.tx)+', received '+formatDataBytes(data.saved.rx),
     'Recorded: '+new Date().toISOString(),
@@ -209,7 +251,8 @@ function releaseMicrophoneIfUnused(){
 function leaveAll(){for(const s of [...sessions.values()])leaveChannel(s.publicId);}
 async function joinChannel(c){
   if(!c || !channelIds.has(c.id) || sessions.has(c.id))return;
-  if(sessions.size+joinInProgress>=MAX_ACTIVE){setMessage('Limit: '+MAX_ACTIVE+' simultaneous joined channels on this browser.');return;}
+  if(!modeAllows(c)){setMessage('Switch to Advanced mode to join '+c.title+'.');return;}
+  if(sessions.size+joinInProgress>=maxActiveChannels()){setMessage('Limit: '+maxActiveChannels()+' simultaneous joined channels in '+radioMode+' mode.');return;}
   if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || typeof window.Peer!=='function'){
     reportError('This radio requires HTTPS, microphone permission, and PeerJS connectivity.');return;
   }
@@ -235,9 +278,9 @@ async function joinChannel(c){
       roomId=await deriveProtectedRoomId(c.id,pin);
       pinCache.set(c.id,pin);
     }
-    if(sessions.has(c.id))return;
+    if(sessions.has(c.id) || !modeAllows(c))return;
     const mic=await ensureMicrophone();
-    if(sessions.size>=MAX_ACTIVE)return;
+    if(!modeAllows(c) || sessions.size>=maxActiveChannels())return;
     const source=mic.getAudioTracks()[0];
     const track=source.clone();track.enabled=false;
     // Every channel gets its own track and stream. Other channel tracks remain disabled.
@@ -262,7 +305,7 @@ function leaveChannel(id){
   releaseMicrophoneIfUnused();updateAll();
 }
 async function restoreJoined(){
-  const ids=[...desiredJoined].filter(id=>storedRoom(id)).slice(0,MAX_ACTIVE);
+  const ids=[...desiredJoined].filter(id=>modeAllows(storedRoom(id))).slice(0,maxActiveChannels());
   if(!ids.length){setMessage('No previous joined channels are saved. Join the groups you want first.');return;}
   for(const id of ids){const c=storedRoom(id);if(c)await joinChannel(c);}
 }
@@ -783,6 +826,8 @@ function drawRows(){
 function updateRow(id){
   const r=rows.get(id),s=sessions.get(id);
   if(!r)return;
+  const visible=modeAllows(storedRoom(id));
+  r.box.classList.toggle('hidden',!visible);
   const isActive=!!s,focus=focusedId===id;
   r.box.classList.toggle('active',isActive);
   r.box.classList.toggle('focused',focus);
@@ -790,7 +835,7 @@ function updateRow(id){
   r.monitor.checked=isActive && monitorValue(id);
   r.monitor.disabled=!isActive;
   r.select.checked=isActive || desiredJoined.has(id);
-  r.select.disabled=false;
+  r.select.disabled=!visible;
   r.focus.disabled=!isActive;r.focus.textContent=focus?'Selected':'Focus';
   const connectedPeers=isActive?[...s.members.values()].filter(m=>m.data?.open):[];
   const mediaReady=connectedPeers.filter(m=>m.stream &&
@@ -817,11 +862,11 @@ function updateRow(id){
   r.msg.textContent=isActive?(connectedPeers.length?
     'Voice links '+mediaReady+'/'+connectedPeers.length+' ready · '+s.note:s.note):(desiredJoined.has(id)?'Selected from last session. Tap Restore selected to reconnect.':storedRoom(id)?.secure?'Enter PIN when joining. Only joined members see this channel.':'Select to join. Only joined members see activity.');
   if(focus)updateQuick();
-  ui.count.textContent=sessions.size+' / '+MAX_ACTIVE+' joined';
+  ui.count.textContent=sessions.size+' / '+maxActiveChannels()+' joined';
 }
 function updateQuick(){
   const s=sessions.get(focusedId);
-  if(!s){ui.focusTitle.textContent='No channel selected';ui.focusStatus.textContent='Standby';ui.focusSpeaker.textContent='Channel idle';ui.quick.disabled=true;ui.quickText.textContent='HOLD TO TALK';ui.focusHint.textContent='Join a channel, then tap Focus beside it to use this large Talk button.';return;}
+  if(!s || !modeAllows(s.room)){ui.focusTitle.textContent='No channel selected';ui.focusStatus.textContent='Standby';ui.focusSpeaker.textContent='Channel idle';ui.quick.disabled=true;ui.quickText.textContent='HOLD TO TALK';ui.focusHint.textContent='Join a channel, then tap Focus beside it to use this large Talk button.';return;}
   ui.focusTitle.textContent=s.room.title;
   ui.focusStatus.textContent=s.ready()?'Connected':'Connecting';
   ui.focusStatus.className='status-badge'+(s.ready()?' connected':'');
