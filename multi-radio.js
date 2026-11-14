@@ -11,7 +11,7 @@ const ui = {
   newPin:$('newPin'), newPinBox:$('newPinBox'),
   txTone:$('txTone'), rxTone:$('rxTone'), alertTone:$('alertTone'),
   message:$('channelMessage'), error:$('errorMessage'), count:$('joinCount'),
-  restore:$('restoreChannels'), monitorAll:$('monitorAll'), muteAll:$('muteAll'),
+  restore:$('restoreChannels'), monitorAll:$('monitorAll'), muteAll:$('muteAll'), enableSpeakers:$('enableSpeakers'),
   quick:$('quickTalk'), quickText:$('quickText'), focusTitle:$('focusTitle'),
   focusStatus:$('focusStatus'), focusSpeaker:$('focusSpeaker'), focusHint:$('focusHint'),
   audio:$('remoteAudio')
@@ -195,6 +195,16 @@ async function restoreJoined(){
 ui.restore.addEventListener('click',restoreJoined);
 ui.monitorAll.addEventListener('click',()=>{for(const c of channels)setMonitor(c.id,true);setMessage('Monitoring enabled on every saved channel you have joined.');});
 ui.muteAll.addEventListener('click',()=>{for(const c of channels)setMonitor(c.id,false);setMessage('All channels locally muted. You can still transmit to a joined channel.');});
+ui.enableSpeakers.addEventListener('click',async()=>{
+  unlockSound();
+  let count=0;
+  for(const s of sessions.values()){
+    s.applyAudioOutput();
+    if(!s.monitor || selectedTx && selectedTx!==s)continue;
+    for(const m of s.members.values())if(m.audio){try{await m.audio.play();count++;}catch{}}
+  }
+  setMessage(count?'Speakers enabled for '+count+' connected audio feed(s).':'No incoming audio streams yet. Try again when another member joins.');
+});
 
 function startPTT(s){
   if(!s || !s.ready() || selectedTx && selectedTx!==s || s.floor && s.floor!==s.myId)return;
