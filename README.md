@@ -1,102 +1,91 @@
-# Relay One — Group Web Walkie-Talkie (Slot-26)
+# Relay One — Multi-Channel Walkie-Talkie (Version 5 Prototype)
 
-**Version 4:** A lightweight browser walkie-talkie that supports **up to 6 people in one saved channel**. It has reusable room links, a local profile (name and color), a live participant roster, and a prominent **ON THE AIR** speaker name. Everyone holds to talk and releases to listen.
+**Website:** https://auxz2jz.github.io/Slot-26/
 
-**Open:** https://auxz2jz.github.io/Slot-26/
+Relay One is a browser walkie-talkie. **Version 5 keeps up to five channels connected simultaneously in one dashboard**, with a separate Hold Talk button and Monitor checkbox beside every group. Each room supports up to **six active participants**; participants may belong to overlapping rooms. The owner/operator can join several rooms and broadcast to only the room whose Talk button they hold.
 
-The earlier successful two-person implementation is preserved as [legacy-v3.html](legacy-v3.html) (or https://auxz2jz.github.io/Slot-26/legacy-v3.html). The v3 and v4 signaling IDs are different, so use v4 on all devices for group calls.
+This remains a browser-only **prototype without verified employee accounts**. Do not use it for emergency traffic or confidential workplace conversations.
 
-## Quick setup: create a permanent channel
+## Get started
 
-1. Open the main page in Chrome, Safari, or a supported mobile browser. Use HTTPS and allow microphone access when you join.
-2. Set your **name/callsign** (for example, Officer 1) and **display color**. These preferences are saved in this browser.
-3. Under **Create a new channel**, enter a name like `Dispatch`, `Patrol`, or `Friends` and press **Create**.
-4. The new channel appears under **Saved channels**. Press **Link** to copy its invitation **before** going live, and text the link to other people.
-5. Press **Join** to activate your microphone and enter the channel. Your friend taps the invitation and then **Join** on their own device.
-6. Everyone can press and **hold** the talk button. The current speaker's name appears in the **ON THE AIR** area and is highlighted in the roster. Release to listen.
+1. Open the website in a modern Chrome, Safari, or supported browser over HTTPS.
+2. Set your name/callsign and optional display color.
+3. Under **Add a Channel**, enter a title such as Patrol, Dispatch, or Special Team.
+4. Optionally tick **Require a channel PIN**. New and existing protected rooms allow **4–12 numeric digits**. A four-digit PIN is convenient but weak; longer PINs are preferable.
+5. Click **Create**. Use **Copy link** next to the group to share its reusable invitation. Tell invitees the PIN separately (never embed the PIN in the URL).
+6. Click **Join** beside each channel you want to connect. Repeat for up to five channels without leaving the page.
+7. Choose which joined channels you want to hear by ticking **Monitor sound**. Use **Monitor all** or **Mute all** as shortcuts.
+8. **Hold Talk** beside a channel to speak **only to that group**. All other group microphone tracks stay muted, and other monitored channel speakers are temporarily muted locally while transmitting to reduce audio bleed. Release to listen again.
+9. Click **Focus** on an active channel if you want to use the large **Quick Radio** talk button for it.
+10. Click **Call** beside a connected group to send its members an optional attention beep, but not other channels.
 
-**Next time:** No need to generate another invitation. Each device can open the main page and tap **Join** on its saved channel. The same link can be reused indefinitely as long as the channel ID remains saved or bookmarked. A receiving device saves the channel locally when it opens the invite.
+### When you return
 
-The first device that joins an empty room becomes the temporary channel coordinator. That device handles group membership and speaker arbitration. It does not have to be the original creator. If it leaves, the remaining devices attempt to elect a replacement and reconnect.
+The browser remembers your saved channels, monitor choices, profile, and which rooms were joined. Because browsers require microphone access and may suspend background pages, **press Restore joined** after a refresh/reopen to reconnect those rooms. Protected rooms ask for the PIN again; PINs are retained only in memory during the current page session.
 
-## Customize profile and channels
+Press **Leave** beside a channel to disconnect that group without disconnecting any of the other groups.
 
-- **Name/callsign** and one of six colors are saved on each device. Names and colors are shared with connected participants.
-- A channel has a customizable title when created, a private random room ID, and a **permanent reuseable link**.
-- Multiple channels can be stored on one device. Use **Leave** or **Switch or edit channels** to return to the channel list.
-- **Forget** (×) removes only the channel shortcut from the local browser; it **does not delete the room**, revoke an invitation link, or kick other people out.
-- Browser settings that clear site data or private/incognito sessions can erase saved channels and the user profile; save the invitation separately as a backup.
+### PIN protection / room privacy
 
-## Technical design
+- Every room has a unique invitation ID. Protected rooms derive a separate WebRTC signaling namespace from the combination of room ID and PIN using PBKDF2.
+- The link contains the public room ID and a `secure=1` indicator **but never the PIN or derived namespace**. The PIN is not persisted in localStorage.
+- Only browsers joined to the same channel namespace exchange their audio, member roster, active-speaker information, and call/PTT messages.
+- Simply saving a channel does not join it or reveal active conversations.
+- People belonging to several groups see the activity only for groups they have actually joined. Switching Monitor off silences that group's sound on the local device; it does not forcibly disconnect the group.
+- An incorrect PIN can look like an empty channel, because **there is no central server to verify PINs**.
+- PINs are **not server-enforced authentication**, and a four-digit PIN offers only 10,000 combinations. There is no server-side access control, PIN rate limiting, or user revocation. Real private work use requires authenticated accounts and server-managed channel membership. A participant can independently record or relay a conversation.
 
-- **PeerJS 1.5.5** and **WebRTC** connect participants browser-to-browser, with microphone tracks normally muted.
-- **PeerJS Cloud** supplies free third-party signaling; public STUN servers assist in connection setup.
-- Audio is a **small full mesh**: each person exchanges a direct WebRTC audio stream with every other person. A six-person channel can require **15 distinct audio connections** overall (5 per person).
-- One participant temporarily coordinates membership, publishes the roster, and grants a single push-to-talk speaker at a time.
-- Temporary network interruptions trigger signaling recovery and reconnect attempts. When coordinator disappears, participants attempt to select another coordinator.
-- The app uses **localStorage** for saved rooms and profile settings; there is no database or account login.
+### Audio architecture / isolation
 
-## Limitations and cautions
+- The app obtains microphone permission once and creates an **independent cloned audio track per joined channel**. All cloned tracks start disabled; the track for a granted Talk button is the only track enabled while transmitting.
+- Each joined channel maintains separate PeerJS signaling, presence, current talker, and WebRTC audio connections. Its participants have no access to other channels unless they separately join those rooms.
+- When transmitting, all **other joined groups are locally ducked/muted** to reduce accidental acoustic retransmission of another group through the phone speaker and microphone.
+- The first participant in each room becomes its temporary PTT coordinator. When that user leaves or disconnects, remaining devices attempt to reconnect/elect a new one.
+- PeerJS Cloud signaling and public STUN are prototype dependencies. There is **no TURN relay**, so some LTE/carrier/corporate networks will fail direct connections.
+- **Up to five simultaneous rooms** is an application limit, not a performance guarantee. A six-person room is already a peer-to-peer mesh; several monitored rooms may create many WebRTC connections and consume significant battery/data.
+- Some iOS/Android versions suspend audio, microphones, and network traffic while the browser is backgrounded or the screen locks. Background operation is not guaranteed.
 
-- This is a **prototype**, not a production security/dispatch system or emergency radio.
-- **There is no authentication or authorization**: anyone with the room link can join if the channel has an available seat, and link sharing is not protected.
-- Peer-to-peer WebRTC may fail for some LTE/carrier or workplace NAT configurations. A **TURN relay** is needed for reliable connectivity across restrictive networks.
-- A group mesh uses more bandwidth and battery than a two-person call. Performance with six phones has **not** been field-tested.
-- The browser must remain foregrounded and awake on many Android/iOS devices. iOS background/screen-lock restrictions can suspend audio.
-- All devices should update to V4. The old V3 two-person page remains independently accessible.
-- Saved rooms are not centrally managed: users can rename their own local shortcuts only by removing and recreating/bookmarking a link; centralized channel policies require the future server.
-- The coordinator's browser may briefly interrupt a group when it leaves and a successor is elected.
-- This version does not record audio, provide administrative audit trails, or retain user accounts.
+### Controls
 
-## Troubleshooting
+| Control | What it does |
+|---|---|
+| Join / Leave | Starts or ends just that room |
+| Hold Talk (per group) | Transmits to that group only, one group at a time |
+| Monitor sound | Hear or mute that group's incoming audio |
+| Focus | Selects the group for the large Quick Radio talk button |
+| Call | Sends a channel-local attention alert |
+| Copy link | Copies a reusable, PIN-free invitation |
+| Set PIN | Moves an open channel into a PIN-derived namespace after leaving it |
+| Monitor all / Mute all | Sets local monitoring preferences |
+| Enable speakers | Attempts to enable remote playback on the current device |
+| Restore joined | Reconnects previously joined groups following page reload |
+| Forget | Removes only a saved shortcut from this device; does not revoke its link |
 
-**No one else found:** Ensure all phones use the same permanent invite link, that all have V4 loaded, and at least one browser stays open. Tap **Reconnect** if someone has recently closed the page.
+### Optional sounds
 
-**No sound but names appear:** Tap **Enable speaker**. Check that the phone is not muted and the browser has microphone permission; use headphones when nearby. Check whether the status says audio is still linking.
+- **Squawk before I transmit:** sends a small PTT-start signal to the **selected group only**, and starts microphone transmission after a short delay.
+- **Hear incoming squawks:** allows each listener to disable incoming PTT tones.
+- **Hear channel call alerts:** enables/disables the short attention beep sent by the group's Call button.
 
-**Works on Wi-Fi but not LTE:** The carrier's network may prevent direct WebRTC peer connections. The next phase needs a managed signaling service and TURN relay (for example coturn).
+Tones are synthesized by the receiving browser and may be suppressed during mobile backgrounding.
 
-**Want the simpler version?** Open [the V3 two-person backup](legacy-v3.html).
+## Versions and rollback
 
-## Test and deployment
+- **Current:** [Version 5 main multi-channel dashboard](index.html).
+- **Previous:** [Version 4.1 single-channel group radio with PIN and squawk](legacy-v4-1.html).
+- **Earlier:** [Version 4 group radio](legacy-v4.html).
+- **Two-person:** [Version 3 walkie-talkie](legacy-v3.html).
 
-The app is static: GitHub Pages deploys `index.html`, `app.js`, `room-utils.mjs`, and `styles.css` from `main` / `(root)`.
+The earlier versions have independent JavaScript, styles and PIN utility backups so later changes do not break their files.
 
-For utility tests in a Node environment with Web Crypto support:
+## Testing
 
-```bash
-node --test tests/rooms.test.mjs
-```
+GitHub Actions runs `node --check` syntax checks and `node --test tests/*.test.mjs`. The tests cover saved rooms and PIN IDs, plus simulated three-browser audio meshes across two overlapping groups. The simulation validates separate channel tracks, channel-local PTT, temporary muting of other monitored channels during transmission, and monitor restoration afterward.
 
-The source passed JavaScript syntax checks; utility checks passed for room IDs, saved channel deduplication, links, and profiles. A mocked three-browser signaling/audio simulation successfully created a full three-way mesh, granted one speaker, displayed that speaker's name on all three devices, and cleared it on release. **A real multi-device field test is still needed.**
+**These are automated simulations, not a substitute for testing actual Android and iPhone devices**—especially five concurrent rooms, LTE handoffs, and background audio.
 
+## Future server-backed version
 
-## Version 4.1 — protected channels and radio squawk
+Verified employee/user accounts, administrator-assigned overlapping memberships, server-validated PINs and room permissions, direct private calls, user management, individual revocation, secure call events, push notifications, TURN for mobile networks, and an SFU/media router for scalable multi-channel dispatch.
 
-### Channel PINs
-
-- In **Create a new channel**, select **Require channel PIN** and enter an **8–12 digit numeric PIN**. The existing saved-channel **Lock** action also lets you protect an open channel.
-- Text the **reusable Link** and tell members the **PIN separately** (ideally using a different communication method). Invite URLs contain `secure=1`, but **never contain the PIN or PIN-derived WebRTC room ID**.
-- Every member enters the same PIN when they join. A separate deterministic PBKDF2-derived signaling namespace is used for each combination of channel ID and PIN; a device with a wrong PIN reaches a **different isolated session**, not the actual channel.
-- PINs are held in memory during an open page session, but are **not saved in persistent localStorage**; after a reload, members must enter the PIN again.
-- Locking an existing room moves the protected group to a new namespace. **Reshare the new protected link and PIN**; previously shared unprotected invitations do not grant access to the protected session.
-- In this browser-only prototype, an incorrect PIN may look like an **empty channel** rather than displaying "Wrong PIN". Ask another member to confirm the PIN if you cannot see them.
-- **Important:** A shared PIN is **not a verified user account**, and this scheme does not provide server-side authorization, PIN attempt rate limits, membership revocation, or assurance against determined attackers. Use a dedicated server with authenticated user identities and permissions for private work communications.
-
-### Channel activity privacy
-
-The client connects to **one selected channel at a time**. It does not send participant rosters, active speaker names, PTT activity, or WebRTC voice to other channels. PIN-protected rooms have distinct signaling namespaces. A user who is a member of multiple channels can join one, leave, then join another; **simultaneous channel monitoring and per-channel PTT buttons are planned for the later server-backed release**.
-
-Audio and control data use WebRTC's encrypted transport, but encryption does not authenticate human identity or prevent a legitimate member from recording or forwarding audio.
-
-### Optional PTT-start squawk
-
-While in a radio channel, select **Send a short squawk when I start talking** to notify listeners. Listeners may independently uncheck **Play incoming squawks from this channel**. The squawk lasts about **0.2 seconds**, and the sender's microphone opens about **0.28 seconds** after winning the channel's talk floor, so the alert should precede the message. The tone is synthesized locally by the receiving browser; it is **not** yet injected into the outgoing voice stream. Some phones may suppress the tone when the page is backgrounded or audio permissions are restricted.
-
-### Automated checks
-
-GitHub Actions runs JavaScript syntax and room/PIN tests from [checks.yml](.github/workflows/checks.yml). Source files and local tests are published in this repository; over-the-air PIN protection and background tone behavior still require real device testing.
-
-## Next production phase
-
-For Zak's Security One or other work deployments: authenticated users, centrally managed persistent channel membership, a dedicated secure signaling service, server-issued TURN credentials, privacy-aware administrative controls, dispatch/group switching, and a server-forwarded audio architecture when groups outgrow a browser mesh.
+See [Version 5 roadmap](docs/V5_ROADMAP.md).
