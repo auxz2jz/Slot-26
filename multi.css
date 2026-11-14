@@ -51,3 +51,13 @@
 @media(max-width:350px){.compact-talk{height:118px;width:118px;min-width:118px}.group-action-row{grid-template-columns:1fr 1fr}.quick-controls{gap:18px}}
 
 @media(max-width:520px){.multi-toolbar{display:grid;grid-template-columns:1fr 1fr}}
+
+/* V6 fixed-channel selectors: ten identical channels on every device. */
+.channel-select-label{display:flex!important;align-items:center;gap:11px;margin:0!important;cursor:pointer}
+.channel-select-label input[type=checkbox]{width:23px;height:23px;min-width:23px;margin:0;accent-color:var(--accent);cursor:pointer}
+.channel-select-label .group-title{font-size:20px}
+.group-action-row{grid-template-columns:1fr 1.6fr 1fr}
+.multi-channel .monitor-label:has(input:disabled){opacity:.5;cursor:not-allowed}
+.multi-channel .monitor-label input:disabled{cursor:not-allowed}
+.group-subtitle{padding-left:34px}
+@media(max-width:350px){.group-action-row{grid-template-columns:1fr 1fr 1fr}.group-action-row button{font-size:11px}}
