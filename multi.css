@@ -71,3 +71,45 @@
 .radio-diag .secondary-text{font-size:11px;line-height:1.5}
 .diag-log{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;line-height:1.5;max-height:290px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#081521;border-radius:9px;border:1px solid #375266;color:#c9e5e7;padding:13px;margin:10px 0 0}
 .radio-diag .multi-toolbar .secondary{white-space:normal}
+
+/* V6.2: estimated WebRTC data usage and reversible compact radio layout. */
+.data-usage-panel{padding-top:15px!important;padding-bottom:15px!important}
+.data-usage-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.data-usage-cell{display:flex;flex-direction:column;gap:5px;min-width:0;background:#0c2433;border:1px solid #274659;border-radius:12px;padding:12px}
+.data-amount{font-size:25px;line-height:1.15;font-variant-numeric:tabular-nums;color:#d4f9ed;overflow-wrap:anywhere}
+.data-usage-cell .small{font-size:11px;white-space:normal;overflow-wrap:anywhere}
+.data-meter-bottom{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:10px}
+.data-meter-bottom .small{font-size:11px;line-height:1.4}
+.data-meter-bottom button{flex-shrink:0;padding:8px 10px}
+.layout-switcher{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 12px}
+.layout-switch-buttons{display:flex;gap:4px}
+.layout-switch-buttons button{padding:8px 12px;font-size:12px}
+.layout-switch-buttons button[aria-pressed="true"]{color:#08372c;background:#6de2b6;border-color:#7fefd0;font-weight:800}
+
+/* Compact mode keeps the talk button, speaker activity, and independent monitor switch visible. */
+body.radio-compact .multi-channel-list{gap:5px;margin:7px 0}
+body.radio-compact .multi-channel{padding:8px 10px;border-radius:10px;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"head head" "signal signal" "actions extra";column-gap:8px;row-gap:3px}
+body.radio-compact .group-head{grid-area:head;align-items:center;gap:6px}
+body.radio-compact .group-title{font-size:15px!important;line-height:1.2}
+body.radio-compact .group-subtitle{font-size:10px;margin-top:0}
+body.radio-compact .channel-select-label{gap:7px}
+body.radio-compact .channel-select-label input{width:19px;height:19px;min-width:19px}
+body.radio-compact .group-subtitle{padding-left:26px}
+body.radio-compact .group-status{font-size:10px;padding:3px 7px}
+body.radio-compact .group-signal{grid-area:signal;gap:6px;min-height:17px;padding:0;margin:0;border:0}
+body.radio-compact .on-air{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.radio-compact .group-count{font-size:10px}
+body.radio-compact .group-action-row{grid-area:actions;grid-template-columns:0.85fr 1.4fr .8fr;gap:5px}
+body.radio-compact .group-action-row button{font-size:12px;padding:9px 3px;min-height:40px;border-radius:8px}
+body.radio-compact .group-extra{grid-area:extra;align-items:center;justify-content:flex-end;margin:0;gap:0}
+body.radio-compact .monitor-label{gap:4px;font-size:10px;line-height:1.2}
+body.radio-compact .monitor-label input{width:17px;height:17px}
+body.radio-compact .group-people,body.radio-compact .group-msg{display:none}
+@media(max-width:400px){
+ .data-usage-grid{gap:6px}
+ .data-usage-cell{padding:9px}
+ .data-amount{font-size:20px}
+ body.radio-compact .multi-channel{padding:7px}
+ body.radio-compact .group-action-row button{font-size:11px}
+ body.radio-compact .monitor-label{font-size:10px}
+}
