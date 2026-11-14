@@ -1,8 +1,21 @@
-# Relay One — Ten-Channel Shared Radio (Version 6.2 Concept)
+# Relay One — Basic / Advanced Shared Radio (Version 6.3)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
 
 This is a browser-based push-to-talk prototype for a shared set of **ten fixed channels**. Every user sees the exact same channels. No individual invitation, channel creation, or channel distribution is required.
+
+## V6.3 — Basic and Advanced radio modes (GitHub Pages prototype)
+
+Relay One now has an in-page **Radio Mode** switch above the existing Compact/Detailed channel layout controls:
+
+- **Basic (default):** only Channels **01–02** appear and may be joined, up to **two simultaneous joined channels**.
+- **Advanced:** all **ten existing shared channels** appear; up to **five simultaneous joined channels**; Channels 06–10 retain their existing demonstration PIN check.
+- **Mode selection is saved locally** in the browser and can differ between devices. The same underlying channels, room IDs, and voice links are used in both modes: a Basic user on Channel 01 can communicate with an Advanced user on Channel 01.
+- **Switching from Advanced to Basic** actively disconnects any joined Channels 03–10 and clears their selected-for-restore state; this prevents hidden listening/transmission. Channels 01–02 remain connected. Switching back to Advanced makes all channels available again, but does not automatically rejoin the channels that were disconnected.
+- Compact/Detailed mode is an independent display-density preference and is still available in either radio mode.
+- The setting is **not employee authentication or access control**. Both radio modes are user-selectable on the public prototype, and server-enforced site permissions would be required for any eventual employee deployment.
+
+**Version 6.2 backup:** https://auxz2jz.github.io/Slot-26/legacy-v6-2.html
 
 ## Radio channel plan
 
