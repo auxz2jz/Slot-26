@@ -16,7 +16,7 @@
   <main class="app">
     <header class="masthead">
       <div class="brand-mark" aria-hidden="true">◉</div>
-      <div><p class="eyebrow">RELAY ONE / PROTOTYPE</p><h1>Walkie-talkie</h1></div>
+      <div><p class="eyebrow">RELAY ONE / MOBILE FIX V3</p><h1>Walkie-talkie</h1></div>
       <span class="beta">2 users</span>
     </header>
 
@@ -58,7 +58,7 @@
 
     <section class="card notice" aria-label="Important notes">
       <span class="micro-label">TEST VERSION</span>
-      <p>Keep this page open and your device awake while talking. If your phone suspends the page while texting, return here and tap <strong>Reconnect</strong>. Wear headphones when testing nearby devices. A secure HTTPS page is needed for microphone access.</p>
+      <p>Keep this page open and your device awake while talking. Version 3 keeps active voice calls running across brief signaling interruptions and tolerates longer cellular delays. If your phone suspends the page while texting, return here and tap <strong>Reconnect</strong>. Wear headphones when testing nearby devices. A secure HTTPS page is needed for microphone access.</p>
       <p id="errorMessage" class="error hidden" role="alert"></p>
     </section>
     <footer>Browser-to-browser encrypted voice • No recording • Prototype only, not for emergency communications</footer>
@@ -125,8 +125,9 @@ let session = 0, joining = false, leaving = false;
 let peerRestartTimer = null, guestSearchTimer = null, redialTimer = null, heartbeatTimer = null;
 let pendingSince = 0, lastSeen = 0, notice = '';
 const HEARTBEAT_MS = 3000;
-const STALE_MS = 12000;
-const PENDING_MS = 6500;
+const STALE_MS = 35000; // Mobile radio scheduling can pause for seconds on LTE.
+const PENDING_MS = 10000;
+let signalingSince = 0;
 
 function showError(message) { ui.error.textContent = message; ui.error.classList.remove('hidden'); }
 function clearError() { ui.error.textContent = ''; ui.error.classList.add('hidden'); }
@@ -136,7 +137,7 @@ function status(message, badge = 'Waiting', kind = '') {
   ui.badge.className = 'status-badge' + (kind ? ` ${kind}` : '');
 }
 function active() {
-  return Boolean(peer?.open && dataConn?.open && mediaConn?.open && remoteStream && Date.now() - lastSeen < STALE_MS);
+  return Boolean(dataConn?.open && mediaConn?.open && remoteStream && Date.now() - lastSeen < STALE_MS);
 }
 function send(message) {
   if (!dataConn?.open) return;
@@ -334,6 +335,7 @@ function initializePeer(current) {
   const config = window.RELAY_CONFIG || {};
   const opts = {debug:0, config:{iceServers:config.iceServers || [{urls:'stun:stun.l.google.com:19302'}]}};
   if (config.peerServer) Object.assign(opts, config.peerServer);
+  signalingSince = Date.now();
   const thisPeer = new window.Peer(isHost ? hostId() : guestId(), opts);
   peer = thisPeer;
   thisPeer.on('open', () => {
@@ -367,15 +369,19 @@ function initializePeer(current) {
   });
   thisPeer.on('disconnected', () => {
     if (current !== session || peer !== thisPeer) return;
-    notice = 'Signaling disconnected (often after switching apps). Reconnecting…';
-    resetConnections();
+    // PeerJS keeps existing WebRTC data and media channels alive during signaling loss.
+    // Do not terminate a working conversation just because the control socket dropped.
+    notice = 'Signaling interrupted. Keeping voice connected while restoring service…';
+    signalingSince = Date.now();
     try { thisPeer.reconnect(); }
-    catch { restartPeer(current, 2200); return; }
-    // PeerJS reconnect can stall indefinitely on some mobile browsers.
+    catch { if (!active()) restartPeer(current, 2200); return; }
     clearTimeout(peerRestartTimer);
     peerRestartTimer = setTimeout(() => {
-      if (current === session && peer === thisPeer && !thisPeer.open) restartPeer(current, 1700);
-    }, 7500);
+      peerRestartTimer = null;
+      if (current !== session || peer !== thisPeer || thisPeer.open) return;
+      if (!active()) restartPeer(current, 1700, 'Re-establishing mobile connection…');
+      else { notice = 'Voice remains connected. Signaling will recover when available.'; render(); }
+    }, 18000);
     render();
   });
   thisPeer.on('error', err => {
@@ -388,12 +394,15 @@ function initializePeer(current) {
     }
     console.warn('Peer error', err?.type || err);
     if (err?.type === 'unavailable-id') {
+      // Keep an existing working WebRTC call even if another signaling session has claimed the ID.
+      if (active()) { notice = 'Voice is still working; reconnect control unavailable.'; render(); return; }
       // Old host sockets can linger on PeerJS Cloud after a phone sleeps. Wait for release.
       const msg = isHost ? 'Your previous session is still clearing. Retrying automatically…' : 'Reconnecting with a fresh visitor ID…';
       restartPeer(current, isHost ? 5500 : 1800, msg);
       return;
     }
-    if (['network', 'socket-error', 'server-error', 'ssl-unavailable'].includes(err?.type)) {
+    if (['network', 'socket-error', 'socket-closed', 'server-error', 'ssl-unavailable'].includes(err?.type)) {
+      if (active()) { notice = 'Signaling error; voice is still connected.'; render(); return; }
       restartPeer(current, 3500, 'Network connection changed. Reconnecting automatically…');
       return;
     }
@@ -413,8 +422,13 @@ function tick(current) {
       render();
     } else send({type:'ping'});
   }
-  if (!document.hidden && peer && !peer.open && !peerRestartTimer && peer.disconnected) {
-    try { peer.reconnect(); } catch { restartPeer(current, 2500); }
+  if (!document.hidden && peer && !peer.open && !peerRestartTimer) {
+    if (peer.disconnected) {
+      signalingSince = Date.now();
+      try { peer.reconnect(); } catch { if (!active()) restartPeer(current, 2500); }
+    } else if (!active() && Date.now() - signalingSince > 18000) {
+      restartPeer(current, 1800, 'Signaling did not recover. Retrying…');
+    }
   }
 }
 function prepareInvite() {
@@ -517,13 +531,13 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) { stopTalking(); return; }
   if (microphone) {
     tick(session);
-    if (peer?.destroyed || (!peer?.open && !peerRestartTimer && !peer?.disconnected)) restartPeer(session, 200);
+    if (peer?.destroyed || (!peer?.open && !peerRestartTimer && !peer?.disconnected && !active() && Date.now() - signalingSince > 18000)) restartPeer(session, 200);
   }
 });
 window.addEventListener('online', () => {
   if (!microphone) return;
   if (peer?.open) tick(session);
-  else restartPeer(session, 400, 'Internet restored. Reconnecting…');
+  else if (!active()) restartPeer(session, 400, 'Internet restored. Reconnecting…');
 });
 window.addEventListener('pageshow', event => {
   if (event.persisted && microphone) restartPeer(session, 200, 'Restoring your radio after switching apps…');
