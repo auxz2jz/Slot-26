@@ -241,7 +241,7 @@ test('V6.3: Basic displays two channels, restricts joins, and Advanced exposes t
   assert.equal(advanced.sessions.has(c1.id),true,'Basic Channel 01 stays connected');
   assert.equal(advanced.rows.get(c3.id).box.classes.has('hidden'),true);
   assert.equal(advanced.localStorage.getItem('relay-one.radio-mode.v6.3'),JSON.stringify('basic'));
-  assert.equal(advanced.ui.joinCount.textContent,'1 / 2 joined');
+  assert.equal(advanced.ui.count.textContent,'1 / 2 joined');
 
   for(const app of [basic,advanced])for(const channel of [...app.sessions.keys()])app.leaveChannel(channel);
 });
