@@ -1,61 +1,75 @@
-# Relay One — Browser Walkie-Talkie (Slot-26)
+# Relay One — Group Web Walkie-Talkie (Slot-26)
 
-Two-person, browser-based, **push-to-talk** voice prototype. The single file [index.html](index.html) is ready for GitHub Pages. No build tooling or accounts are needed for this test.
+**Version 4:** A lightweight browser walkie-talkie that supports **up to 6 people in one saved channel**. It has reusable room links, a local profile (name and color), a live participant roster, and a prominent **ON THE AIR** speaker name. Everyone holds to talk and releases to listen.
 
-## Published site
+**Open:** https://auxz2jz.github.io/Slot-26/
 
-Once GitHub Pages is enabled for the `main` branch at `/(root)`, open:
-**https://auxz2jz.github.io/Slot-26/**
+The earlier successful two-person implementation is preserved as [legacy-v3.html](legacy-v3.html) (or https://auxz2jz.github.io/Slot-26/legacy-v3.html). The v3 and v4 signaling IDs are different, so use v4 on all devices for group calls.
 
-If you have not yet enabled it: [Settings → Pages](https://github.com/auxz2jz/Slot-26/settings/pages) → **Deploy from a branch** → **main** → **/(root)** → **Save**.
+## Quick setup: create a permanent channel
 
-## Recommended two-phone setup (v2)
+1. Open the main page in Chrome, Safari, or a supported mobile browser. Use HTTPS and allow microphone access when you join.
+2. Set your **name/callsign** (for example, Officer 1) and **display color**. These preferences are saved in this browser.
+3. Under **Create a new channel**, enter a name like `Dispatch`, `Patrol`, or `Friends` and press **Create**.
+4. The new channel appears under **Saved channels**. Press **Link** to copy its invitation **before** going live, and text the link to other people.
+5. Press **Join** to activate your microphone and enter the channel. Your friend taps the invitation and then **Join** on their own device.
+6. Everyone can press and **hold** the talk button. The current speaker's name appears in the **ON THE AIR** area and is highlighted in the roster. Release to listen.
 
-**On Phone 1 — channel owner**
+**Next time:** No need to generate another invitation. Each device can open the main page and tap **Join** on its saved channel. The same link can be reused indefinitely as long as the channel ID remains saved or bookmarked. A receiving device saves the channel locally when it opens the invite.
 
-1. Open the website in Chrome or another supported browser.
-2. Tap **Get invite link before connecting**. Do this **before** activating the microphone.
-3. Tap **Copy** or **Share** and text that exact invitation to Phone 2.
-4. Return to the webpage and tap **Start radio & enable microphone**. Allow the microphone.
-5. Leave the webpage foregrounded, with the screen on, for the best results.
+The first device that joins an empty room becomes the temporary channel coordinator. That device handles group membership and speaker arbitration. It does not have to be the original creator. If it leaves, the remaining devices attempt to elect a replacement and reconnect.
 
-**On Phone 2 — invited visitor**
+## Customize profile and channels
 
-1. Open the link received by text (ideally directly in Chrome, not inside an in-app browser).
-2. Enter your name and tap **Join channel & enable microphone**.
-3. Allow microphone permissions, then wait until both phones show **Connected**.
-4. **Hold to talk, release to listen.** Use the Enable speaker control if the sound does not play.
+- **Name/callsign** and one of six colors are saved on each device. Names and colors are shared with connected participants.
+- A channel has a customizable title when created, a private random room ID, and a **permanent reuseable link**.
+- Multiple channels can be stored on one device. Use **Leave** or **Switch or edit channels** to return to the channel list.
+- **Forget** (×) removes only the channel shortcut from the local browser; it **does not delete the room**, revoke an invitation link, or kick other people out.
+- Browser settings that clear site data or private/incognito sessions can erase saved channels and the user profile; save the invitation separately as a backup.
 
-For a meaningful internet test, put one phone on Wi-Fi and the other on cellular. If testing nearby, use headphones to avoid feedback.
+## Technical design
 
-## Connection recovery in v3
+- **PeerJS 1.5.5** and **WebRTC** connect participants browser-to-browser, with microphone tracks normally muted.
+- **PeerJS Cloud** supplies free third-party signaling; public STUN servers assist in connection setup.
+- Audio is a **small full mesh**: each person exchanges a direct WebRTC audio stream with every other person. A six-person channel can require **15 distinct audio connections** overall (5 per person).
+- One participant temporarily coordinates membership, publishes the roster, and grants a single push-to-talk speaker at a time.
+- Temporary network interruptions trigger signaling recovery and reconnect attempts. When coordinator disappears, participants attempt to select another coordinator.
+- The app uses **localStorage** for saved rooms and profile settings; there is no database or account login.
 
-- The owner has a reserved channel host ID; each visitor now receives a **fresh temporary ID** when reconnecting. A previous visitor's stale ID no longer falsely claims the second seat.
-- The owner allows only **one responsive visitor at a time**. Unresponsive visitor sessions are released after approximately **35 seconds** instead of the earlier 12-second cutoff. This reduces unnecessary resets during temporary LTE delays. An additional real, connected visitor is not displaced.
-- Both devices exchange periodic ping/pong messages to detect dead connections. Brief signaling-server interruptions no longer immediately destroy an existing WebRTC voice connection.
-- The app retries signaling after temporary network trouble or returning to the foreground, with an 18-second grace period before restarting a nonworking connection.
-- There is a manual **Reconnect** button if mobile network recovery stalls.
-- If a previous *owner* session is still occupying the host ID on the external signaling server, the app retries claiming it. This can take time until the old server session expires.
-- Use **Leave** and then **Start radio** to reset microphone permission/session state if necessary.
+## Limitations and cautions
 
-The owner URL contains `host=1`; the copied visitor invitation does **not**. **Share only the link provided by the Copy/Share buttons**, not the address bar URL from the owner's page.
+- This is a **prototype**, not a production security/dispatch system or emergency radio.
+- **There is no authentication or authorization**: anyone with the room link can join if the channel has an available seat, and link sharing is not protected.
+- Peer-to-peer WebRTC may fail for some LTE/carrier or workplace NAT configurations. A **TURN relay** is needed for reliable connectivity across restrictive networks.
+- A group mesh uses more bandwidth and battery than a two-person call. Performance with six phones has **not** been field-tested.
+- The browser must remain foregrounded and awake on many Android/iOS devices. iOS background/screen-lock restrictions can suspend audio.
+- All devices should update to V4. The old V3 two-person page remains independently accessible.
+- Saved rooms are not centrally managed: users can rename their own local shortcuts only by removing and recreating/bookmarking a link; centralized channel policies require the future server.
+- The coordinator's browser may briefly interrupt a group when it leaves and a successor is elected.
+- This version does not record audio, provide administrative audit trails, or retain user accounts.
 
-## Privacy and limitations
+## Troubleshooting
 
-- WebRTC transports encrypted audio browser-to-browser; public PeerJS Cloud handles connection signaling and public STUN servers help establish a direct connection.
-- This demo has **no authentication**. Anyone with the invitation can attempt to enter a channel, and the owner URL is not a secure credential.
-- Some Wi-Fi/cellular combinations require a TURN relay. The prototype does not configure one, so connectivity is not guaranteed on every network.
-- Mobile browsers may throttle or suspend pages in the background or with screens locked, interrupting audio and signaling.
-- Do not use this as an emergency communications system, or for sensitive workplace traffic. This is a proof-of-concept test, not a production radio network.
+**No one else found:** Ensure all phones use the same permanent invite link, that all have V4 loaded, and at least one browser stays open. Tap **Reconnect** if someone has recently closed the page.
 
-## Planned work version
+**No sound but names appear:** Tap **Enable speaker**. Check that the phone is not muted and the browser has microphone permission; use headphones when nearby. Check whether the status says audio is still linking.
 
-Dedicated authenticated signaling and TURN servers, user login, channel membership/permissions, dispatcher functions, reconnect management, and testing on the actual employee devices.
+**Works on Wi-Fi but not LTE:** The carrier's network may prevent direct WebRTC peer connections. The next phase needs a managed signaling service and TURN relay (for example coturn).
 
-## Testing status
+**Want the simpler version?** Open [the V3 two-person backup](legacy-v3.html).
 
-The JavaScript syntax was checked using Node.js. Simulations verified two participants connect, a third cannot enter while the channel is occupied, invitation links are created before joining, a returning visitor gets a new ID, and an established voice connection survives a temporary signaling disconnect. **Real phone-to-phone audio/network behavior must still be tested.**
+## Test and deployment
 
-## LTE / Pixel troubleshooting
+The app is static: GitHub Pages deploys `index.html`, `app.js`, `room-utils.mjs`, and `styles.css` from `main` / `(root)`.
 
-LTE itself has enough throughput for WebRTC voice. To isolate network behavior, try the Pixel first on reliable Wi-Fi with Chrome in the foreground and screen awake, then use LTE with all other conditions unchanged. If Wi-Fi works but cellular fails, your carrier's NAT/firewall, packet loss, or the absence of a TURN relay may be responsible; the 35-second timeout is only a mitigation. PeerJS Cloud plus STUN **cannot guarantee** connectivity on restricted networks. For reliable LTE access, the next server-backed version should deploy authenticated signaling and a TURN relay (for example coturn), with TURN credentials kept server-side or issued with short lifetimes.
+For utility tests in a Node environment with Web Crypto support:
+
+```bash
+node --test tests/rooms.test.mjs
+```
+
+The source passed JavaScript syntax checks; utility checks passed for room IDs, saved channel deduplication, links, and profiles. A mocked three-browser signaling/audio simulation successfully created a full three-way mesh, granted one speaker, displayed that speaker's name on all three devices, and cleared it on release. **A real multi-device field test is still needed.**
+
+## Next production phase
+
+For Zak's Security One or other work deployments: authenticated users, centrally managed persistent channel membership, a dedicated secure signaling service, server-issued TURN credentials, privacy-aware administrative controls, dispatch/group switching, and a server-forwarded audio architecture when groups outgrow a browser mesh.
