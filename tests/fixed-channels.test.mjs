@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {webcrypto} from 'node:crypto';
 import * as utils from '../room-utils.mjs';
 import * as presets from '../channel-presets.mjs';
+import {WebRTCUsageMeter,formatDataBytes} from '../usage-meter.mjs';
 
 // Deterministic, in-memory PeerJS and browser stand-ins. Tests use no network or microphone.
 class Events {
@@ -100,11 +101,12 @@ class Peer extends Events {
 }
 const source=readFileSync(new URL('../multi-radio.js',import.meta.url),'utf8')
   .replace(/^import\s*\{[\s\S]*?\}\s*from\s*'[^']+';\s*/,'')
+  .replace(/^import\s*\{[\s\S]*?\}\s*from\s*'[^']+';\s*/,'')
   .replace(/^import\s*\{[\s\S]*?\}\s*from\s*'[^']+';\s*/,'');
 const utilityNames=[
   'MAX_PEOPLE','PALETTE','validRoom','newRoom','cleanName','cleanTitle','cleanColor',
   'roomLink','leaderId','guestId','validGuestId','validMemberId','normalizeChannels',
-  'validPin','deriveProtectedRoomId','CHANNEL_PRESETS','MAX_SELECTED_CHANNELS','checkChannelPin'
+  'validPin','deriveProtectedRoomId','CHANNEL_PRESETS','MAX_SELECTED_CHANNELS','checkChannelPin','WebRTCUsageMeter','formatDataBytes'
 ];
 const environmentNames=[
   'document','window','navigator','localStorage','location','history','MediaStream',
@@ -113,7 +115,7 @@ const environmentNames=[
 const appFactory=new Function(...utilityNames,...environmentNames,source+
   '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,sessions,ui,channels,rows};');
 const utilsForTest={
-  ...utils,...presets,
+  ...utils,...presets,WebRTCUsageMeter,formatDataBytes,
   checkChannelPin:(channel,pin)=>presets.checkChannelPin(channel,pin,webcrypto),
   newRoom:()=>utils.newRoom(webcrypto),
   guestId:id=>utils.guestId(id,utils.newRoom(webcrypto)),
@@ -121,7 +123,7 @@ const utilsForTest={
 };
 function browser(name,rooms){
   const els=new Map();
-  const document={hidden:false,getElementById(id){if(!els.has(id))els.set(id,new FakeElement());return els.get(id);},
+  const document={hidden:false,body:{classList:{toggle(){}}},getElementById(id){if(!els.has(id))els.set(id,new FakeElement());return els.get(id);},
     createElement(tag){return new FakeElement(tag);},addEventListener(){}};
   const data=new Map([
     ['relay-one.profile.v4',JSON.stringify({name,color:utils.PALETTE[0]})],
