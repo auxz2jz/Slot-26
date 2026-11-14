@@ -1,4 +1,4 @@
-import {MAX_PEOPLE,PALETTE,validRoom,newRoom,cleanName,cleanTitle,cleanColor,roomLink,leaderId,guestId,validGuestId,validMemberId,normalizeChannels} from './room-utils.mjs';
+import {MAX_PEOPLE,PALETTE,validRoom,newRoom,cleanName,cleanTitle,cleanColor,roomLink,leaderId,guestId,validGuestId,validMemberId,normalizeChannels,validPin,deriveProtectedRoomId} from './room-utils.mjs?v=4.1.0';
 
 const $ = id => document.getElementById(id);
 const ui = {
@@ -9,17 +9,20 @@ const ui = {
   people:$('participants'), count:$('participantCount'), audio:$('audioContainer'),
   speakerButton:$('enableAudio'), reconnect:$('reconnect'), leave:$('leave'), switchChannel:$('switchChannel'),
   invite:$('inviteLink'), copy:$('copyInvite'), share:$('shareInvite'), inviteMessage:$('inviteMessage'),
-  error:$('errorMessage')
+  pinRequired:$('requirePin'), newPin:$('newPin'), newPinBox:$('newPinBox'),
+  txTone:$('txTone'), rxTone:$('rxTone'), error:$('errorMessage')
 };
 const PROFILE_KEY = 'relay-one.profile.v4', CHANNEL_KEY = 'relay-one.channels.v4';
 const HEARTBEAT = 5000, STALE = 40000, PENDING = 9000, NO_LEADER = 23000;
-const DEFAULT_PROFILE = {name:'User',color:PALETTE[0]};
+const DEFAULT_PROFILE = {name:'User',color:PALETTE[0],txTone:false,rxTone:true};
 
 function load(key,fallback) { try { const v=JSON.parse(localStorage.getItem(key)); return v ?? fallback; } catch { return fallback; } }
 function save(key,v) { try { localStorage.setItem(key,JSON.stringify(v)); return true; } catch { return false; } }
 let profileRaw = load(PROFILE_KEY,DEFAULT_PROFILE);
-let profile = {name:cleanName(profileRaw?.name),color:cleanColor(profileRaw?.color)};
+let profile = {name:cleanName(profileRaw?.name),color:cleanColor(profileRaw?.color),txTone:profileRaw?.txTone===true,rxTone:profileRaw?.rxTone!==false};
 let savedChannels = normalizeChannels(load(CHANNEL_KEY,[]));
+const pinCache = new Map(); // Memory only: NEVER persist PINs or embed them in invitation links.
+let toneContext=null, txToneTimer=null;
 
 let channel=null, microphone=null, peer=null, myId='', coordinator=false, epoch=0, starting=false;
 let floorId=null, floorUpdated=0, wantTalk=false, transmitting=false, runningSince=0;
@@ -31,20 +34,23 @@ function showError(message) { ui.error.textContent=message; ui.error.classList.r
 function clearError() { ui.error.textContent=''; ui.error.classList.add('hidden'); }
 function setNote(message) { note=message; renderRadio(); }
 function saveChannels() { save(CHANNEL_KEY,savedChannels); }
-function addChannel(id,title) {
+function addChannel(id,title,secure=false) {
   const existing=savedChannels.find(x=>x.id===id);
-  if(existing) return existing;
-  const result={id,title:cleanTitle(title)};
+  if(existing) {
+    if(secure && !existing.secure){existing.secure=true;saveChannels();}
+    return existing;
+  }
+  const result={id,title:cleanTitle(title),secure:secure===true};
   savedChannels.unshift(result); savedChannels=savedChannels.slice(0,30); saveChannels();
   return result;
 }
-function inviteFor(c) { return roomLink(location.href,c.id,c.title); }
+function inviteFor(c) { return roomLink(location.href,c.publicId || c.id,c.title,c.secure===true); }
 function copyText(value) {
   return navigator.clipboard?.writeText(value).catch(() => { window.prompt('Copy this invitation link:',value); }) ??
     Promise.resolve(window.prompt('Copy this invitation link:',value));
 }
 function describeChannel(c) {
-  return 'Private room • reusable link';
+  return c.secure ? 'PIN protected • reusable link' : 'Open invite • reusable link';
 }
 function renderColors() {
   ui.colors.replaceChildren();
@@ -76,16 +82,34 @@ function renderHome() {
     remove.setAttribute('aria-label','Forget '+c.title+' on this device');
     remove.addEventListener('click',()=>{if(!confirm('Forget '+c.title+' on this device? The link still works for other people.'))return;
       savedChannels=savedChannels.filter(x=>x.id!==c.id);saveChannels();renderHome();});
-    row.append(copy,join,link,remove);ui.list.appendChild(row);
+    const lock=document.createElement('button');lock.className='lock';
+    lock.textContent=c.secure?'PIN':'Lock';lock.setAttribute('aria-label',c.secure?'PIN required for '+c.title:'Require PIN for '+c.title);
+    if(c.secure){lock.disabled=true;lock.title='Protected channel: PIN requested when you join';}
+    else lock.addEventListener('click',()=>{
+      const pin=window.prompt('Choose an 8–12 digit PIN for '+c.title+'. Send this PIN separately from the new invitation link.');
+      if(pin===null)return;
+      if(!validPin(pin)){ui.homeMessage.textContent='PIN must contain 8–12 digits. Channel remains unprotected.';return;}
+      c.secure=true;pinCache.set(c.id,pin);saveChannels();renderHome();
+      ui.homeMessage.textContent='Channel protected. Share the NEW Link and its PIN separately. Previously shared unprotected links point to a different room.';
+    });
+    row.append(copy,join,link,lock,remove);ui.list.appendChild(row);
   }
 }
 function readProfile() { profile.name=cleanName(ui.profileName.value);save(PROFILE_KEY,profile); }
 ui.profileName.value=profile.name;
 ui.profileName.addEventListener('change',()=>{readProfile();ui.profileName.value=profile.name;sendHello();});
+ui.pinRequired.addEventListener('change',()=>ui.newPinBox.classList.toggle('hidden',!ui.pinRequired.checked));
+ui.txTone.checked=profile.txTone;ui.rxTone.checked=profile.rxTone;
+ui.txTone.addEventListener('change',()=>{profile.txTone=ui.txTone.checked;save(PROFILE_KEY,profile);});
+ui.rxTone.addEventListener('change',()=>{profile.rxTone=ui.rxTone.checked;save(PROFILE_KEY,profile);});
 ui.create.addEventListener('click',()=>{
   readProfile(); const title=cleanTitle(ui.newChannel.value || 'New channel');
-  const c=addChannel(newRoom(),title);ui.newChannel.value='';
-  renderHome();ui.homeMessage.textContent='Created '+c.title+'. Share the Link button once, then tap Join when ready.';
+  const secure=ui.pinRequired.checked,pin=ui.newPin.value.trim();
+  if(secure && !validPin(pin)){ui.homeMessage.textContent='Please choose an 8–12 digit numeric PIN before creating the channel.';return;}
+  const c=addChannel(newRoom(),title,secure);
+  if(secure)pinCache.set(c.id,pin);
+  ui.newChannel.value='';ui.newPin.value='';ui.pinRequired.checked=false;ui.newPinBox.classList.add('hidden');
+  renderHome();ui.homeMessage.textContent='Created '+(secure?'PIN-protected ':'')+c.title+'. Share its reusable Link and PIN separately.';
 });
 ui.newChannel.addEventListener('keydown',e=>{if(e.key==='Enter')ui.create.click();});
 renderColors();renderHome();
@@ -94,8 +118,8 @@ if(incoming.has('room')){
   const id=incoming.get('room');
   if(validRoom(id)){
     const title=cleanTitle(incoming.get('channel') || 'Shared channel');
-    const c=addChannel(id,title);
-    ui.homeMessage.textContent='Invitation saved: '+c.title+'. Tap Join to enter. You can reuse it later.';
+    const c=addChannel(id,title,incoming.get('secure')==='1');
+    ui.homeMessage.textContent='Invitation saved: '+c.title+(c.secure?' (PIN required)':'')+'. Tap Join to enter. You can reuse it later.';
     renderHome();
   } else showError('This channel invitation is invalid. Request a new link.');
 }
