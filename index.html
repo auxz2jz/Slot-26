@@ -7,7 +7,7 @@
 <meta name="description" content="Relay One: ten shared radio channels with multi-channel monitoring and group-only push-to-talk.">
 <title>Relay One — Shared Radio Channels</title>
 <link rel="stylesheet" href="./styles.css?v=4.1.0">
-<link rel="stylesheet" href="./multi.css?v=6.0.0">
+<link rel="stylesheet" href="./multi.css?v=6.1.0">
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
 <script type="module" src="./multi-radio.js?v=6.0.0"></script>
 </head>
@@ -15,7 +15,7 @@
 <main class="app multi-app">
   <header class="masthead">
     <div class="brand-mark" aria-hidden="true">◉</div>
-    <div><p class="eyebrow">RELAY ONE / TEN-CHANNEL V6</p><h1>Group radio</h1></div>
+    <div><p class="eyebrow">RELAY ONE / TEN-CHANNEL V6.1</p><h1>Group radio</h1></div>
     <span class="version">10 channels</span>
   </header>
 
@@ -68,6 +68,16 @@
     <p id="channelMessage" class="small muted" aria-live="polite">Join up to five channels at once. Each talk button transmits only to its own channel.</p>
     <div id="channelList" class="multi-channel-list"></div>
   </section>
+
+  <details class="card radio-diag" id="diagnosticsPanel">
+    <summary><strong>Connection diagnostics</strong> <span class="secondary-text">For troubleshooting multi-channel audio</span></summary>
+    <p class="small muted">See whether a channel loses signaling, media, or internet connectivity. This log is kept in memory only and does not include PINs or conversation audio. Android's actual 5G signal strength is not available to a webpage.</p>
+    <div class="multi-toolbar">
+      <button class="secondary" id="copyDiagnostics" type="button">Copy diagnostic log</button>
+      <button class="secondary" id="clearDiagnostics" type="button">Clear log</button>
+    </div>
+    <pre id="diagnosticLog" class="diag-log" aria-live="polite">Connection events will appear here.</pre>
+  </details>
 
   <section class="card warning">
     <span class="micro-label">DEMO RADIO • NOT AUTHENTICATED WORK COMMUNICATIONS</span>
