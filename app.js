@@ -297,7 +297,7 @@ function attachMedia(call,current) {
   if(current!==epoch || !call || !members.has(call.peer)){try{call?.close();}catch{}return false;}
   const m=members.get(call.peer);
   if(m.call && m.call!==call){try{call.close();}catch{}return false;}
-  m.call=call;
+  m.call=call; m.mediaPendingAt=Date.now();
   call.on('stream',stream=>{
     if(current!==epoch || m.call!==call)return;
     m.stream=stream;
@@ -449,9 +449,10 @@ function tick(current){
     }else if(m.data && now-m.pendingAt>PENDING){
       removeMember(id,true);
     }
-    if(m.call?.peerConnection?.iceConnectionState==='failed'){
+    if((m.call?.peerConnection?.iceConnectionState==='failed') || (m.call && !m.stream && now-(m.mediaPendingAt||now)>16000)){
       dropMedia(m);
     }
+    if(m.data?.open && myId<id && !m.call)startMedia(id,current);
   }
   if(coordinator){
     if(floorId && floorId===myId && wantTalk)floorUpdated=now;
@@ -498,7 +499,8 @@ async function startChannel(c) {
 }
 function renderRadio() {
   if(!channel)return;
-  const ready=Boolean(microphone && peer?.open && isLeaderOnline());
+  // A signaling outage must not mute an already established WebRTC voice path.
+  const ready=Boolean(microphone && isLeaderOnline());
   const people=[{id:myId,name:profile.name,color:profile.color,isMe:true},...([...members.values()].filter(m=>m.data?.open).map(m=>({id:m.id,name:m.name,color:m.color,isMe:false})))];
   ui.people.replaceChildren();
   for(const p of people){
