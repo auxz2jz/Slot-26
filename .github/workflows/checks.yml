@@ -16,6 +16,7 @@ jobs:
       - name: Check JavaScript syntax
         run: |
           node --check app.js
+          node --check multi-radio.js
           node --check room-utils.mjs
       - name: Test channel and PIN security utilities
         run: node --test tests/*.test.mjs
