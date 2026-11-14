@@ -16,14 +16,20 @@ class FakeElement {
   constructor(tag='div'){
     this.tagName=tag.toUpperCase();this.value='';this.textContent='';this.children=[];
     this.style={setProperty(){}};this.dataset={};this.disabled=false;this.checked=false;
-    this.muted=false;this.classList={add(){},remove(){},toggle(){}};
+    this.muted=false;this.attributes={};this.classes=new Set();
+    this.classList={
+      add:(...names)=>names.forEach(n=>this.classes.add(n)),
+      remove:(...names)=>names.forEach(n=>this.classes.delete(n)),
+      toggle:(name,force)=>{if(force===undefined)force=!this.classes.has(name);
+        if(force)this.classes.add(name);else this.classes.delete(name);return force;}
+    };
     this.listeners={};
   }
   addEventListener(k,fn){(this.listeners[k]??=[]).push(fn);}
   append(...children){this.children.push(...children);}
   appendChild(child){this.children.push(child);}
   replaceChildren(...children){this.children=children;}
-  setAttribute(){}
+  setAttribute(name,value){this.attributes[name]=String(value);}
   remove(){}
   pause(){}
   play(){return Promise.resolve();}
@@ -113,7 +119,7 @@ const environmentNames=[
   'URLSearchParams','setTimeout','clearTimeout','setInterval','clearInterval'
 ];
 const appFactory=new Function(...utilityNames,...environmentNames,source+
-  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,sessions,ui,channels,rows};');
+  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,sessions,ui,channels,rows};');
 const utilsForTest={
   ...utils,...presets,WebRTCUsageMeter,formatDataBytes,
   checkChannelPin:(channel,pin)=>presets.checkChannelPin(channel,pin,webcrypto),
@@ -135,9 +141,11 @@ function browser(name,rooms){
   const window={isSecureContext:true,Peer,addEventListener(){},
     prompt(){return '1234';},confirm(){return true;}};
   const location={href:'https://example.invalid/Slot-26/',pathname:'/Slot-26/',search:''};
-  return appFactory(...utilityNames.map(k=>utilsForTest[k]),document,window,navigator,
+  const app=appFactory(...utilityNames.map(k=>utilsForTest[k]),document,window,navigator,
     localStorage,location,{replaceState(){}},FakeStream,URLSearchParams,
     soon,cancel,repeat,stopRepeat);
+  return {...app,localStorage};
+
 }
 test('V6: overlapping preset channels isolate PTT and monitoring',async()=>{
   const a=presets.CHANNEL_PRESETS[0];
@@ -186,9 +194,70 @@ test('V6: all browsers have the identical ten shared channels, and a bad PIN pre
   assert.equal(person.rows.size,10);
   assert.ok([...person.rows.values()].every(row=>row.select?.type==='checkbox'));
   assert.ok([...person.rows.values()].every(row=>!row.link&&!row.lock&&!row.forget));
+  person.switchMode('advanced');
   await person.joinChannel(secure);flush();
   assert.equal(person.sessions.size,0,'incorrect four-digit PIN must not create any channel session');
   assert.match(person.ui.message.textContent,/Incorrect PIN/);
   // Unauthorized users cannot learn names/roster/talk activity just by viewing the channel list.
   assert.match(person.rows.get(secure.id).speaker.textContent,/Join to see (this )?channel/);
+});
+
+test('V6.3: Basic displays two channels, restricts joins, and Advanced exposes ten',async()=>{
+  const [c1,c2,c3]=presets.CHANNEL_PRESETS;
+  const basic=browser('Basic officer',[]);
+  assert.equal(basic.getMode(),'basic');
+  assert.equal(basic.maxActiveChannels(),2);
+  assert.equal(basic.ui.channelModeBadge.textContent,'2 channels');
+  assert.equal(basic.ui.basicMode.attributes['aria-pressed'],'true');
+  assert.equal(basic.ui.advancedMode.attributes['aria-pressed'],'false');
+  assert.equal(basic.rows.size,10);
+  assert.equal(basic.rows.get(c1.id).box.classes.has('hidden'),false);
+  assert.equal(basic.rows.get(c2.id).box.classes.has('hidden'),false);
+  assert.equal(basic.rows.get(c3.id).box.classes.has('hidden'),true);
+  assert.equal(basic.rows.get(c3.id).select.disabled,true);
+  await basic.joinChannel(c3);flush();
+  assert.equal(basic.sessions.size,0,'hidden advanced channel cannot connect in Basic mode');
+  assert.match(basic.ui.message.textContent,/Switch to Advanced/);
+
+  const advanced=browser('Advanced patrol',[]);
+  advanced.switchMode('advanced');
+  assert.equal(advanced.maxActiveChannels(),5);
+  assert.equal(advanced.rows.get(c3.id).box.classes.has('hidden'),false);
+  assert.equal(advanced.ui.channelModeBadge.textContent,'10 channels');
+  assert.equal(JSON.parse(advanced.localStorage.getItem('relay-one.radio-mode.v6.3')),'advanced');
+
+  await basic.joinChannel(c1);flush();
+  await advanced.joinChannel(c1);flush();
+  for(let i=0;i<2;i++){for(const tick of intervals.values())tick();flush();}
+  assert.equal([...basic.sessions.get(c1.id).members.values()].filter(m=>m.data?.open).length,1,
+    'Basic and Advanced users share identical underlying Channel 01');
+  assert.equal([...advanced.sessions.get(c1.id).members.values()].filter(m=>m.data?.open).length,1);
+
+  await advanced.joinChannel(c3);flush();
+  assert.ok(advanced.sessions.has(c3.id));
+  advanced.switchMode('basic');
+  flush();
+  assert.equal(advanced.sessions.has(c3.id),false,'Advanced-only channel must disconnect rather than remain invisible');
+  assert.equal(advanced.sessions.has(c1.id),true,'Basic Channel 01 stays connected');
+  assert.equal(advanced.rows.get(c3.id).box.classes.has('hidden'),true);
+  assert.equal(advanced.localStorage.getItem('relay-one.radio-mode.v6.3'),JSON.stringify('basic'));
+  assert.equal(advanced.ui.joinCount.textContent,'1 / 2 joined');
+
+  for(const app of [basic,advanced])for(const channel of [...app.sessions.keys()])app.leaveChannel(channel);
+});
+
+test('V6.3: Basic permits two channels, Advanced retains five simultaneous join slots',async()=>{
+  const b=browser('Two-channel user',[]);
+  const channels=presets.CHANNEL_PRESETS;
+  await b.joinChannel(channels[0]);flush();
+  await b.joinChannel(channels[1]);flush();
+  assert.equal(b.sessions.size,2);
+  assert.match(b.ui.count.textContent,/2 \/ 2 joined/);
+  await b.joinChannel(channels[2]);flush();
+  assert.equal(b.sessions.size,2,'third channel is not available in Basic');
+  b.switchMode('advanced');
+  await b.joinChannel(channels[2]);flush();
+  assert.equal(b.sessions.size,3);
+  assert.match(b.ui.count.textContent,/3 \/ 5 joined/);
+  for(const id of [...b.sessions.keys()])b.leaveChannel(id);
 });
