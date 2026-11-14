@@ -534,22 +534,44 @@ function tick(current){
 }
 async function startChannel(c) {
   if(starting || !c || !validRoom(c.id))return;
+  let pin=null;
+  if(c.secure){
+    pin=pinCache.get(c.id);
+    if(!pin){
+      pin=window.prompt('Enter the 8–12 digit PIN for '+c.title+'. The PIN is not included in the invite link.');
+      if(pin===null)return;
+      pin=pin.trim();
+      if(!validPin(pin)){showError('The channel PIN must contain 8–12 digits.');return;}
+    }
+  }
+  // Unlock tone playback in the direct tap gesture on iPhone/Android.
+  unlockSound();
   starting=true;readProfile();clearError();
   leaveChannel(false);
-  starting=true;channel=c;runningSince=Date.now();note='Requesting microphone permission…';
+  starting=true;channel={...c,publicId:c.id};runningSince=Date.now();
+  note=c.secure?'Unlocking your PIN-protected channel…':'Requesting microphone permission…';
   const current=++epoch;ui.home.classList.add('hidden');ui.radio.classList.remove('hidden');
-  ui.title.textContent=c.title;ui.invite.value=inviteFor(c);renderRadio();
+  ui.title.textContent=c.title+(c.secure?' 🔒':'');
+  ui.invite.value=inviteFor(c);renderRadio();
   try {
     if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia)
       throw Error('Microphone access requires HTTPS and a supported browser.');
     if(typeof window.Peer!=='function')throw Error('PeerJS could not load. Check your internet connection.');
+    if(c.secure){
+      // PeerJS sees only this PIN-derived namespace, not the public invitation ID.
+      // The channel's shared PIN never travels through signaling or the URL.
+      const namespace=await deriveProtectedRoomId(c.id,pin);
+      if(current!==epoch)return;
+      channel={...c,publicId:c.id,id:namespace};
+      pinCache.set(c.id,pin);
+    }
     const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
     if(current!==epoch){stream.getTracks().forEach(t=>t.stop());return;}
     microphone=stream;microphone.getAudioTracks().forEach(t=>{
       t.enabled=false;
       t.onended=()=>{releaseFloor();showError('Microphone disconnected. Rejoin to restore your mic.');};
     });
-    note='Connecting to channel…';
+    note=c.secure?'Joining protected channel…':'Connecting to channel…';
     heartbeatTimer=setInterval(()=>tick(current),HEARTBEAT);
     beginPeer(current);renderRadio();
   } catch(err){
@@ -586,7 +608,7 @@ function renderRadio() {
   else if(floorId){ui.badge.textContent='On air';ui.badge.className='status-badge busy';ui.status.textContent=(speaker?.name||'Someone')+' is transmitting';}
   else{ui.badge.textContent='Connected';ui.badge.className='status-badge connected';
     const receiving=people.slice(1).filter(p=>!members.get(p.id)?.stream).length;
-    ui.status.textContent=people.length===1?'Ready • waiting for others to join':
+    ui.status.textContent=people.length===1?(channel.secure?'Protected channel ready • if others do not appear, check that everyone has the same PIN':'Ready • waiting for others to join'):
       people.length+' people connected'+(receiving?' • linking '+receiving+' audio connection(s)':' • audio ready');}
 }
 
