@@ -233,9 +233,9 @@ function changeFloor(id,startTone=false) {
       transmitting=true;renderRadio();
     };
     if(newSpeaker && profile.txTone){
-      // Let remote devices play the squawk before opening the mic (no speech is cut off).
+      // Remote devices need time to play the squawk before the mic is opened.
       txToneTimer=setTimeout(()=>{txToneTimer=null;startVoice();},280);
-    }else startVoice();
+    } else if(!txToneTimer) startVoice(); // Preserve an in-progress tone delay across roster updates.
   }
   if(coordinator)broadcast({type:'floor',id:floorId,tone:!!startTone});
   renderRadio();
