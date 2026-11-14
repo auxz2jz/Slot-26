@@ -189,28 +189,64 @@ function leaveChannel(clearErrors=true) {
   history.replaceState(null,'',location.pathname);
   renderHome();
 }
+function unlockSound() {
+  try {
+    const AudioCtor=window.AudioContext || window.webkitAudioContext;
+    if(!AudioCtor)return;
+    if(!toneContext)toneContext=new AudioCtor();
+    if(toneContext.state==='suspended')toneContext.resume().catch(()=>{});
+  }catch(err){console.warn('PTT audio tone unavailable',err);}
+}
+function playSquawk() {
+  if(!profile.rxTone)return;
+  try {
+    unlockSound();
+    if(!toneContext || toneContext.state==='suspended')return;
+    const now=toneContext.currentTime+0.01;
+    const osc=toneContext.createOscillator(),volume=toneContext.createGain();
+    osc.type='square';
+    osc.frequency.setValueAtTime(870,now);
+    osc.frequency.exponentialRampToValueAtTime(545,now+0.18);
+    volume.gain.setValueAtTime(0.001,now);
+    volume.gain.linearRampToValueAtTime(0.11,now+0.018);
+    volume.gain.setValueAtTime(0.11,now+0.12);
+    volume.gain.exponentialRampToValueAtTime(0.001,now+0.195);
+    osc.connect(volume);volume.connect(toneContext.destination);
+    osc.start(now);osc.stop(now+0.20);
+  }catch(err){console.warn('Squawk playback error',err);}
+}
 function stopTransmit() {
+  if(txToneTimer){clearTimeout(txToneTimer);txToneTimer=null;}
   transmitting=false;
   microphone?.getAudioTracks().forEach(t=>{t.enabled=false;});
 }
-function changeFloor(id) {
+function changeFloor(id,startTone=false) {
+  const newSpeaker=id!==floorId;
   floorId=id;floorUpdated=Date.now();
+  if(newSpeaker && id && id!==myId && startTone && profile.rxTone)playSquawk();
   if(floorId!==myId || !wantTalk)stopTransmit();
   if(floorId===myId && !wantTalk && !coordinator)send(leaderKey(),{type:'release'});
   if(floorId===myId && wantTalk){
-    microphone?.getAudioTracks().forEach(t=>{t.enabled=true;});
-    transmitting=true;
+    const startVoice=()=>{
+      if(floorId!==myId || !wantTalk || !microphone)return;
+      microphone.getAudioTracks().forEach(t=>{t.enabled=true;});
+      transmitting=true;renderRadio();
+    };
+    if(newSpeaker && profile.txTone){
+      // Let remote devices play the squawk before opening the mic (no speech is cut off).
+      txToneTimer=setTimeout(()=>{txToneTimer=null;startVoice();},280);
+    }else startVoice();
   }
-  if(coordinator)broadcast({type:'floor',id:floorId});
+  if(coordinator)broadcast({type:'floor',id:floorId,tone:!!startTone});
   renderRadio();
 }
 function requestFloor() {
   if(!microphone || !isLeaderOnline() || (floorId && floorId!==myId))return;
   wantTalk=true;
   if(coordinator){
-    if(!floorId) changeFloor(myId);
-    else if(floorId===myId)changeFloor(myId);
-  } else send(leaderKey(),{type:'request'});
+    if(!floorId) changeFloor(myId,profile.txTone);
+    else if(floorId===myId)changeFloor(myId,profile.txTone);
+  } else send(leaderKey(),{type:'request',tone:profile.txTone});
   renderRadio();
 }
 function releaseFloor() {
@@ -244,7 +280,7 @@ function updateRoster(payload) {
   for(const id of [...members.keys()]){
     if(!ids.has(id) && id!==leaderKey())removeMember(id,true);
   }
-  if(typeof payload.floor==='string' && ids.has(payload.floor) || payload.floor===null) changeFloor(payload.floor);
+  if((typeof payload.floor==='string' && ids.has(payload.floor)) || payload.floor===null) changeFloor(payload.floor);
   ensureMesh(epoch);renderRadio();
 }
 function handleMessage(id,payload,current) {
@@ -265,10 +301,10 @@ function handleMessage(id,payload,current) {
     case 'floor':
       if(!coordinator && id===leaderKey()){
         const speaker=payload.id;
-        if(speaker===null || speaker===myId || rosterIds.has(speaker))changeFloor(speaker);
+        if(speaker===null || speaker===myId || rosterIds.has(speaker))changeFloor(speaker,payload.tone===true);
       }break;
     case 'request':
-      if(coordinator && !floorId){ changeFloor(id); }
+      if(coordinator && !floorId){ changeFloor(id,payload.tone===true); }
       break;
     case 'release':
       if(coordinator && floorId===id)changeFloor(null);
