@@ -49,3 +49,5 @@
 .multi-app .colors{margin-bottom:9px}
 @media(max-width:500px){.multi-app .settings-grid{grid-template-columns:1fr}.quick-controls{gap:20px}.compact-talk{height:135px;width:135px;min-width:135px}.quick-info strong{font-size:19px}.group-action-row{grid-template-columns:repeat(4,1fr);gap:5px}.group-action-row button{font-size:12px;padding:13px 3px}.multi-app .card{padding:15px}.multi-toolbar .secondary{min-width:0}.group-extra{gap:3px 9px}}
 @media(max-width:350px){.compact-talk{height:118px;width:118px;min-width:118px}.group-action-row{grid-template-columns:1fr 1fr}.quick-controls{gap:18px}}
+
+@media(max-width:520px){.multi-toolbar{display:grid;grid-template-columns:1fr 1fr}}
