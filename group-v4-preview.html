@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a1724">
+<meta name="description" content="Relay One: saved group walkie-talkie channels for up to six people.">
+<title>Relay One — Group Walkie-Talkie</title>
+<link rel="stylesheet" href="./styles.css?v=4.0.0">
+</head>
+<body>
+<main class="app">
+  <header class="masthead">
+    <div class="brand-mark" aria-hidden="true">◉</div>
+    <div><p class="eyebrow">RELAY ONE / GROUP V4</p><h1>Walkie-talkie</h1></div>
+    <span class="version">6 people max</span>
+  </header>
+
+  <section class="card" id="homePanel">
+    <div class="section-heading"><div><span class="micro-label">YOUR RADIO PROFILE</span><h2>My identity</h2></div><span class="secondary-text">Saved on this device</span></div>
+    <label for="displayName">Name or callsign</label>
+    <input id="displayName" type="text" maxlength="30" autocomplete="nickname" placeholder="e.g. Patrol 1">
+    <label class="color-label">Your display color</label>
+    <div class="colors" id="colors" role="group" aria-label="Choose a profile color"></div>
+    <div class="divider"></div>
+    <span class="micro-label">SAVED CHANNELS</span>
+    <p class="muted small">Create a channel once. Its invite link stays the same, and every person who joins can save it here for next time.</p>
+    <div id="channelList" class="channel-list"></div>
+    <label for="newChannel">Create a new channel</label>
+    <div class="inline-input">
+      <input id="newChannel" type="text" maxlength="36" placeholder="e.g. Dispatch, Patrol, Friends">
+      <button class="secondary compact" id="createChannel" type="button">Create</button>
+    </div>
+    <p id="homeMessage" class="small muted" aria-live="polite"></p>
+  </section>
+
+  <section class="card hidden" id="radioPanel">
+    <div class="radio-header">
+      <div><span class="micro-label">CHANNEL</span><h2 id="channelTitle">General</h2></div>
+      <span class="status-badge" id="statusBadge" role="status">Connecting</span>
+    </div>
+    <p id="connectionText" class="muted small" aria-live="polite">Initializing…</p>
+    <div class="speaker-block" id="speakerBlock">
+      <div class="speaker-label">ON THE AIR</div>
+      <div class="speaker-name" id="speakerName" aria-live="polite">Channel idle</div>
+      <div class="wave" id="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+    <div class="talk-area">
+      <button class="talk-button" id="talkButton" type="button" disabled aria-label="Hold to talk">
+        <svg viewBox="0 0 48 48" width="49" height="49" fill="none" aria-hidden="true"><rect x="18" y="5" width="12" height="26" rx="6" stroke="currentColor" stroke-width="3"/><path d="M11 23a13 13 0 0 0 26 0M24 36v7M16 43h16" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+        <span id="talkText">WAITING</span>
+      </button>
+      <p class="small muted" id="talkHint">Waiting for the channel to connect</p>
+    </div>
+
+    <div class="participants-header"><span class="micro-label">ON THIS CHANNEL</span><strong id="participantCount">1 / 6</strong></div>
+    <div class="participants" id="participants"></div>
+    <div class="control-row">
+      <button class="secondary" id="enableAudio" type="button">Enable speaker</button>
+      <button class="secondary" id="reconnect" type="button">Reconnect</button>
+      <button class="secondary danger" id="leave" type="button">Leave</button>
+    </div>
+    <div class="divider"></div>
+    <span class="micro-label">PERMANENT INVITE LINK</span>
+    <div class="inline-input">
+      <input type="text" id="inviteLink" readonly aria-label="Saved channel invitation link">
+      <button type="button" id="copyInvite" class="secondary compact">Copy</button>
+      <button type="button" id="shareInvite" class="secondary compact">Share</button>
+    </div>
+    <p id="inviteMessage" class="small muted">This link can be reused each time you meet on this channel.</p>
+    <button type="button" class="text-button" id="switchChannel">Switch or edit channels</button>
+  </section>
+
+  <section class="card warning">
+    <span class="micro-label">PROTOTYPE • NOT EMERGENCY RADIO</span>
+    <p id="errorMessage" class="error hidden" role="alert"></p>
+    <p class="small muted">Keep the browser open and screen awake. Use headphones when nearby. Saved channels are stored in this browser, not in a user account. Anyone with the channel link can join while a seat is free.</p>
+  </section>
+  <footer>Browser-to-browser encrypted voice • Small-group mesh • No recordings or accounts</footer>
+</main>
+<div id="audioContainer" aria-hidden="true"></div>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
+<script type="module" src="./app.js?v=4.0.0"></script>
+</body>
+</html>
