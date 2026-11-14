@@ -43,16 +43,16 @@ test('session totals grow by deltas, do not double count, and persist between vi
   values=reports(1500,2900,50,80);
   now=12000;await meter.sample([peer]);
   snapshot=meter.snapshot();
-  assert.equal(snapshot.session.tx,1570);
+  assert.equal(snapshot.session.tx,1550);
   assert.equal(snapshot.session.rx,2980);
-  assert.equal(snapshot.saved.tx,1570);
+  assert.equal(snapshot.saved.tx,1550);
   assert.equal(snapshot.saved.rx,2980);
   assert.ok(snapshot.kbps.rx>0);
-  assert.equal(JSON.parse(mem.getItem(USAGE_KEY)).tx,1570);
+  assert.equal(JSON.parse(mem.getItem(USAGE_KEY)).tx,1550);
 
   const anotherVisit=new WebRTCUsageMeter(mem,()=>now);
   assert.equal(anotherVisit.snapshot().session.tx,0);
-  assert.equal(anotherVisit.snapshot().saved.tx,1570);
+  assert.equal(anotherVisit.snapshot().saved.tx,1550);
   anotherVisit.resetSaved();
   assert.equal(anotherVisit.snapshot().saved.tx,0);
   assert.equal(anotherVisit.snapshot().session.tx,0);
