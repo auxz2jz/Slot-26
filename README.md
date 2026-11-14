@@ -1,4 +1,4 @@
-# Relay One — Ten-Channel Shared Radio (Version 6 Concept)
+# Relay One — Ten-Channel Shared Radio (Version 6.2 Concept)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
 
@@ -66,6 +66,32 @@ This patch responds to a real-device report: Pixel 8 Pro on Wi-Fi can communicat
 6. Keep notes on exactly which phone lost audio and whether its Android 5G/LTE icon or Wi-Fi indicator also disappeared. The in-page browser status is not a substitute for Android's modem indicators.
 
 Automated tests validate logic and simulated PeerJS links, **not** physical 5G/LTE handoffs, real mobile audio hardware, or five-channel reliability. TURN/SFU and a backend remain longer-term priorities.
+
+## V6.2 — Radio data usage and compact channel layout
+
+### Data usage meter
+
+The **Estimated radio data** card at the top of the main dashboard displays:
+
+- **This session:** estimated radio bytes sent and received since the webpage loaded.
+- **Saved on this device:** estimated WebRTC traffic accumulated across visits in this browser (localStorage). Use **Reset saved** to start the stored meter over without clearing the current session.
+- **Current rate:** approximate recent combined incoming/outgoing media throughput in kilobits per second (kbps), sampled every four seconds while the page runs.
+
+Measurements use `RTCPeerConnection.getStats()` reports for audio `inbound-rtp` / `outbound-rtp` and WebRTC data channels when exposed by the browser. It counts deltas on each distinct peer connection, so successive polls do not repeatedly count the same media. Counters are stored on the current device's browser only, not uploaded or synchronized to other devices.
+
+**These are estimates, not the data Verizon charges you for.** Measurements can omit PeerJS's WebSocket signaling, STUN/ICE/DTLS/SRTP, UDP/IP or retransmission overhead, unreported data-channel traffic, connection packets between samples, initial app downloads, and all other phone data. A web app generally cannot know whether specific WebRTC traffic traveled over cellular or Wi-Fi, and a backgrounded mobile browser may throttle the four-second sampling loop. Check your carrier app for actual data allowances and billed traffic.
+
+### Compact / Detailed layouts
+
+Under **Choose your channels**, select **Compact** for short, vertically stacked radio rows or **Detailed** to return to the expanded cards. Compact keeps Join checkbox, current speaker/channel activity, Focus, Hold Talk, Call, and Monitor sound available; it hides the extended participant list and status paragraphs until Detailed is selected. Your preference is saved in this browser. Both layouts use the same underlying channels and voice connections.
+
+### Site group design proposal (not deployed yet)
+
+For actual site work, we recommend maintaining the fixed radio channel numbers behind the scenes, but giving each channel a **shared, administrator-assigned site label** such as Government Center, Fairgrounds, or Course. The numbers remain useful as radio-style identifiers and for debugging, while the site name tells staff where transmissions go.
+
+A practical design is to reserve several channels for General / Dispatch / All Patrol and dedicate the remaining channels to specific sites. Staff join the site channels they are assigned to; authorized supervisors may monitor several sites simultaneously. PINs can be rotated per shift if there is an authenticated backend and an administrative console to distribute/authorize changes. **The current public static webpage cannot securely rotate PINs or enforce permissions**, and the public four-digit PIN verifiers remain bypassable. Don't change the preset PINs in published code for real confidential work; use verified accounts and server-side channel permissions for that phase.
+
+The site-name idea is recorded in `docs/SITE_CHANNELS.md`; this version leaves all ten shared channel names intact until the site plan is selected and tested.
 
 ## Background and connection reliability
 
