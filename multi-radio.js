@@ -4,6 +4,7 @@ import {
   validPin, deriveProtectedRoomId
 } from './room-utils.mjs';
 import {CHANNEL_PRESETS,MAX_SELECTED_CHANNELS,checkChannelPin} from './channel-presets.mjs';
+import {WebRTCUsageMeter,formatDataBytes} from './usage-meter.mjs';
 
 const $ = id => document.getElementById(id);
 const ui = {
@@ -13,11 +14,16 @@ const ui = {
   restore:$('restoreChannels'), monitorAll:$('monitorAll'), muteAll:$('muteAll'), enableSpeakers:$('enableSpeakers'),
   quick:$('quickTalk'), quickText:$('quickText'), focusTitle:$('focusTitle'),
   focusStatus:$('focusStatus'), focusSpeaker:$('focusSpeaker'), focusHint:$('focusHint'),
-  audio:$('remoteAudio'), diagnostics:$('diagnosticLog'), copyDiagnostics:$('copyDiagnostics'), clearDiagnostics:$('clearDiagnostics')
+  audio:$('remoteAudio'), diagnostics:$('diagnosticLog'), copyDiagnostics:$('copyDiagnostics'), clearDiagnostics:$('clearDiagnostics'),
+  dataSessionTotal:$('dataSessionTotal'),dataSessionBreakdown:$('dataSessionBreakdown'),
+  dataSavedTotal:$('dataSavedTotal'),dataSavedBreakdown:$('dataSavedBreakdown'),
+  dataCurrentRate:$('dataCurrentRate'),resetDataSaved:$('resetDataSaved'),
+  compactLayout:$('compactLayout'),detailedLayout:$('detailedLayout')
 };
 const PROFILE_KEY='relay-one.profile.v4';
 const MONITOR_KEY='relay-one.monitor.v5';
 const ACTIVE_KEY='relay-one.joined.v5';
+const LAYOUT_KEY='relay-one.layout.v6.2';
 const MAX_ACTIVE=MAX_SELECTED_CHANNELS, PING_EVERY=5000, STALE_AFTER=40000, PENDING_AFTER=10000;
 const storeGet=(key,defaultValue)=>{try{return JSON.parse(localStorage.getItem(key))??defaultValue;}catch{return defaultValue;}};
 const storeSet=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{}};
@@ -36,6 +42,47 @@ const desiredJoined=new Set((Array.isArray(storeGet(ACTIVE_KEY,[]))?storeGet(ACT
 const pinCache=new Map(); // Volatile only: never persisted to localStorage or links.
 const sessions=new Map(); // public channel ID -> independent ChannelSession
 const rows=new Map();
+const usageMeter=new WebRTCUsageMeter(localStorage);
+const compactPreference=storeGet(LAYOUT_KEY,'compact');
+let compactLayout=compactPreference!=='detailed';
+function setLayout(isCompact){
+  compactLayout=Boolean(isCompact);
+  document.body.classList.toggle('radio-compact',compactLayout);
+  if(ui.compactLayout)ui.compactLayout.setAttribute('aria-pressed',String(compactLayout));
+  if(ui.detailedLayout)ui.detailedLayout.setAttribute('aria-pressed',String(!compactLayout));
+  storeSet(LAYOUT_KEY,compactLayout?'compact':'detailed');
+}
+ui.compactLayout?.addEventListener('click',()=>setLayout(true));
+ui.detailedLayout?.addEventListener('click',()=>setLayout(false));
+setLayout(compactLayout);
+function renderDataUsage(){
+  const {session,saved,kbps}=usageMeter.snapshot();
+  const fmt=(v)=>formatDataBytes(v);
+  if(ui.dataSessionTotal)ui.dataSessionTotal.textContent=fmt(session.rx+session.tx);
+  if(ui.dataSessionBreakdown)ui.dataSessionBreakdown.textContent='↑ '+fmt(session.tx)+' · ↓ '+fmt(session.rx);
+  if(ui.dataSavedTotal)ui.dataSavedTotal.textContent=fmt(saved.rx+saved.tx);
+  if(ui.dataSavedBreakdown)ui.dataSavedBreakdown.textContent='↑ '+fmt(saved.tx)+' · ↓ '+fmt(saved.rx);
+  if(ui.dataCurrentRate)ui.dataCurrentRate.textContent=(kbps.tx+kbps.rx).toFixed(1)+' kbps';
+}
+async function sampleDataUsage(){
+  const pcs=[];
+  for(const session of sessions.values()){
+    for(const member of session.members.values()){
+      const voice=member.call?.peerConnection;
+      const data=member.data?.peerConnection;
+      if(voice)pcs.push(voice);
+      if(data)pcs.push(data);
+    }
+  }
+  try{await usageMeter.sample(pcs);}catch(err){logRadio('USAGE SAMPLE ERROR','',err?.name||'getStats failed');}
+  renderDataUsage();
+}
+ui.resetDataSaved?.addEventListener('click',()=>{
+  if(!window.confirm('Reset the saved WebRTC data estimate on this device? This cannot be undone.'))return;
+  usageMeter.resetSaved();renderDataUsage();
+});
+renderDataUsage();
+setInterval(()=>{void sampleDataUsage();},4000);
 let focusedId=null, selectedTx=null, microphone=null, micPromise=null, alertContext=null;
 let joinInProgress=0;
 const diagnosticEvents=[];
@@ -59,7 +106,10 @@ function diagnosticReport(){
     return s.room.title+': signaling '+(s.ready()?'ready':'waiting')+
       ', voice '+audio+'/'+peers.length+', ICE '+ice;
   });
-  return ['Relay One V6.1 connection diagnostics',
+  const data=usageMeter.snapshot();
+  return ['Relay One V6.2 connection diagnostics',
+    'Estimated WebRTC session: sent '+formatDataBytes(data.session.tx)+', received '+formatDataBytes(data.session.rx),
+    'Estimated saved: sent '+formatDataBytes(data.saved.tx)+', received '+formatDataBytes(data.saved.rx),
     'Recorded: '+new Date().toISOString(),
     'Browser online: '+(navigator.onLine===false?'no':'yes/unknown'),
     'Network effective type: '+kind+' (if available; not cellular signal)',
@@ -267,7 +317,7 @@ document.addEventListener('visibilitychange',()=>{
   if(!document.hidden)for(const s of sessions.values())s.reconnectSignaling();
 });
 window.addEventListener('online',()=>{for(const s of sessions.values())s.reconnectSignaling();});
-window.addEventListener('pagehide',()=>{if(selectedTx)releaseTalk(selectedTx);for(const s of sessions.values())s.stop();});
+window.addEventListener('pagehide',()=>{void sampleDataUsage();if(selectedTx)releaseTalk(selectedTx);for(const s of sessions.values())s.stop();});
 
 class ChannelSession{
   constructor(publicRoom,effectiveId,track,stream,monitor){
