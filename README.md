@@ -45,6 +45,28 @@ The V6 PIN check is only a **client-side concept demonstration**. The four-digit
 
 The five preset demo PINs are kept out of this public README. The person running the demo should distribute them privately to test participants. To change any preset PIN or channel configuration presently requires updating and redeploying the application; a true administrator console is a separate server-backed phase.
 
+## V6.1: Pixel / Samsung multi-channel reliability update
+
+This patch responds to a real-device report: Pixel 8 Pro on Wi-Fi can communicate with Samsung Galaxy S22 Ultra in one channel, but voice becomes unstable when both phones simultaneously join a second channel.
+
+- **Staggered media negotiation:** across every active channel on one device, outgoing WebRTC audio connections are started sequentially with a short settling delay. This reduces simultaneous ICE/DTLS negotiation pressure on mobile browsers.
+- **Connection diagnostics:** expand **Connection diagnostics** at the bottom of the radio page. It records timestamps, channel number, signaling open/close, WebRTC stream availability, ICE state changes, reconnection attempts, microphone PTT start/stop, and browser online/offline changes. Tap **Copy diagnostic log** to share the report for investigation, or **Clear log**.
+- The log is in memory only and is not uploaded. It does not intentionally include PINs, user names, room identifiers, voice, or recorded audio. Do not paste private browser/device information from elsewhere into the log.
+- The network information API may supply a rough connection type in some browsers but **cannot reliably reveal cellular signal bars, Verizon's data limit, or Android modem connectivity**.
+- **Audio state:** a channel shows **Linking audio** when signaling has connected but some expected voice streams have not. Its details show the number of voice streams ready. “Connected” with multiple participants now means corresponding media streams were received.
+- **Recovery:** failed or timed-out media calls pause before retrying with backoff; transient ICE `disconnected` states are observed and not immediately torn down. Signaling reconnect attempts are throttled to reduce reconnect loops.
+
+### Reproduce and collect diagnostics
+
+1. Reload the updated webpage on **both** devices. Leave any leftover active radio channels or close old tabs.
+2. Put Pixel 8 Pro on stable Wi-Fi and keep the Samsung on its chosen connection.
+3. Join **Channel 01** on the Pixel and then Samsung; verify both indicate voice links **1/1 ready**. Hold Talk in both directions.
+4. Join **Channel 02** on the Pixel and wait for its signaling. Join Channel 02 on Samsung. Wait for both channels to show **1/1 ready** before trying PTT again.
+5. If either becomes stuck in **Linking audio**, shows ICE `failed`/`disconnected`, or displays **BROWSER OFFLINE**, open **Connection diagnostics** on each phone and use **Copy diagnostic log**.
+6. Keep notes on exactly which phone lost audio and whether its Android 5G/LTE icon or Wi-Fi indicator also disappeared. The in-page browser status is not a substitute for Android's modem indicators.
+
+Automated tests validate logic and simulated PeerJS links, **not** physical 5G/LTE handoffs, real mobile audio hardware, or five-channel reliability. TURN/SFU and a backend remain longer-term priorities.
+
 ## Background and connection reliability
 
 This system uses PeerJS Cloud signaling, Google STUN, and direct peer-to-peer media. LTE and corporate NAT restrictions can stop direct calls without a TURN server. Mobile browsers (especially iPhone) may suspend signaling or microphone permissions in the background. A dedicated service with TURN, server-enforced membership and an SFU/media router is required for a reliable workplace radio.
