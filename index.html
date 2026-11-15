@@ -19,22 +19,6 @@
     <span id="channelModeBadge" class="version">2 channels</span>
   </header>
 
-  <section class="card" aria-label="User settings">
-    <div class="section-heading">
-      <div><span class="micro-label">MY RADIO</span><h2>Profile &amp; sounds</h2></div>
-      <span class="secondary-text">Saved on this device</span>
-    </div>
-    <label for="displayName">Name / callsign</label>
-    <input id="displayName" type="text" maxlength="30" autocomplete="nickname" placeholder="Patrol 1">
-    <label for="colors">Display color</label>
-    <div id="colors" class="colors" role="group" aria-label="Choose your color"></div>
-    <div class="settings-grid">
-      <label class="setting-toggle"><input id="txTone" type="checkbox"> Squawk before I transmit</label>
-      <label class="setting-toggle"><input id="rxTone" type="checkbox"> Hear incoming squawks</label>
-      <label class="setting-toggle"><input id="alertTone" type="checkbox"> Hear channel call alerts</label>
-    </div>
-  </section>
-
   <section class="card handheld-radio" aria-label="Handheld radio controls">
     <div class="handheld-topline">
       <span class="micro-label">RELAY ONE / HANDHELD</span>
@@ -88,6 +72,22 @@
     <p id="radioModeHelp" class="small muted">Basic shows Channels 01–02. Advanced shows all ten. Mode changes only this device's display and connections.</p>
     <p id="radioScreenMessage" class="small muted" role="status" aria-live="polite">Ready to join a channel.</p>
   </section>
+
+  <details class="card radio-profile" aria-label="Radio profile settings">
+    <summary class="section-heading radio-manager-summary">
+      <div><span class="micro-label">MY RADIO</span><h2>Profile &amp; sounds</h2></div>
+      <span class="secondary-text">Saved on this device</span>
+    </summary>
+    <label for="displayName">Name / callsign</label>
+    <input id="displayName" type="text" maxlength="30" autocomplete="nickname" placeholder="Patrol 1">
+    <label for="colors">Display color</label>
+    <div id="colors" class="colors" role="group" aria-label="Choose your color"></div>
+    <div class="settings-grid">
+      <label class="setting-toggle"><input id="txTone" type="checkbox"> Squawk before I transmit</label>
+      <label class="setting-toggle"><input id="rxTone" type="checkbox"> Hear incoming squawks</label>
+      <label class="setting-toggle"><input id="alertTone" type="checkbox"> Hear channel call alerts</label>
+    </div>
+  </details>
 
   <section class="card data-usage-panel" aria-label="Radio data usage">
     <div class="section-heading">
