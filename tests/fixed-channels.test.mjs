@@ -119,7 +119,7 @@ const environmentNames=[
   'URLSearchParams','setTimeout','clearTimeout','setInterval','clearInterval'
 ];
 const appFactory=new Function(...utilityNames,...environmentNames,source+
-  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,sessions,ui,channels,rows};');
+  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,sessions,ui,channels,rows};');
 const utilsForTest={
   ...utils,...presets,WebRTCUsageMeter,formatDataBytes,
   checkChannelPin:(channel,pin)=>presets.checkChannelPin(channel,pin,webcrypto),
@@ -260,4 +260,80 @@ test('V6.3: Basic permits two channels, Advanced retains five simultaneous join 
   assert.equal(b.sessions.size,3);
   assert.match(b.ui.count.textContent,/3 \/ 5 joined/);
   for(const id of [...b.sessions.keys()])b.leaveChannel(id);
+});
+
+test('V6.4: visual scanner cycles connected rooms without changing PTT target or WebRTC sessions',async()=>{
+  const [a,b]=presets.CHANNEL_PRESETS;
+  const device=browser('Scanner',[]);
+  await device.joinChannel(a);flush();
+  await device.joinChannel(b);flush();
+  const connectedA=device.sessions.get(a.id),connectedB=device.sessions.get(b.id);
+  const initialFocused=device.getFocusId();
+  assert.equal(initialFocused,a.id);
+  device.setScan(true);
+  assert.equal(device.getScreenId(),a.id);
+  assert.equal(device.ui.radioJoin.disabled,true,'scan preview must not allow accidental leave');
+  assert.equal(device.ui.radioMonitor.disabled,true,'monitor edit is disabled during scan');
+  device.scanTick(Date.now()+1800);
+  assert.equal(device.getScreenId(),b.id,'radio display should appear to scan channels');
+  assert.equal(device.getFocusId(),a.id,'visual sweep cannot silently retarget PTT');
+  assert.equal(device.ui.radioPttTarget.textContent,'PTT TARGET: CH 01');
+  assert.equal(device.sessions.get(a.id),connectedA);
+  assert.equal(device.sessions.get(b.id),connectedB);
+  assert.equal(device.sessions.size,2,'scan never disconnects monitored channels');
+  assert.equal(device.ui.radioScan.attributes['aria-pressed'],'true');
+  device.setPttSide('left');
+  assert.ok(device.ui.radioHousing.classes.has('left-handed'));
+  assert.equal(JSON.parse(device.localStorage.getItem('relay-one.ptt-side.v6.4')),'left');
+  device.browseChannel(-1);
+  assert.equal(device.getScanEnabled(),false,'physical channel selector exits scan intentionally');
+  assert.equal(device.getFocusId(),b.id,'manual button targets selected channel');
+  for(const id of [...device.sessions.keys()])device.leaveChannel(id);
+});
+
+test('V6.4: monitored incoming PTT instantly pops up channel and allows reply, without reconnecting',async()=>{
+  const [a,b]=presets.CHANNEL_PRESETS;
+  const viewer=browser('Scanning patrol',[]);
+  const sender=browser('Site officer',[]);
+  for(const client of [viewer,sender]){
+    await client.joinChannel(a);flush();
+    await client.joinChannel(b);flush();
+  }
+  for(let i=0;i<2;i++){for(const tick of intervals.values())tick();flush();}
+  const aSession=viewer.sessions.get(a.id),bSession=viewer.sessions.get(b.id);
+  viewer.setScan(true);
+  assert.equal(viewer.getFocusId(),a.id);
+  sender.startPTT(sender.sessions.get(b.id));flush();
+  viewer.scanTick();
+  assert.equal(viewer.getScreenId(),b.id,'incoming monitored channel takes over display');
+  assert.equal(viewer.getFocusId(),b.id,'PTT is deliberately targeted to active received channel for reply');
+  assert.equal(viewer.ui.screenScan.textContent,'RECEIVING');
+  assert.match(viewer.ui.focusSpeaker.textContent,/Site officer/);
+  assert.equal(viewer.sessions.get(a.id),aSession);
+  assert.equal(viewer.sessions.get(b.id),bSession);
+  assert.equal(viewer.sessions.size,2);
+  sender.releaseTalk(sender.sessions.get(b.id));flush();
+  viewer.startPTT(bSession);flush();
+  assert.equal(bSession.track.enabled,true,'reply should use active channel');
+  assert.equal(aSession.track.enabled,false,'unrelated monitored channel must never transmit');
+  assert.equal(viewer.getScreenId(),b.id,'scanner stays on target while PTT held');
+  viewer.releaseTalk(bSession);flush();
+  assert.equal(bSession.track.enabled,false,'release must stop transmission');
+  for(const device of [viewer,sender])for(const id of [...device.sessions.keys()])device.leaveChannel(id);
+});
+
+test('V6.4: scan ignores muted channels and only presents joined, monitored activity',async()=>{
+  const [a,b]=presets.CHANNEL_PRESETS;
+  const listener=browser('Listener',[]),speaker=browser('Other',[]);
+  await listener.joinChannel(a);flush();
+  await listener.joinChannel(b);flush();
+  await speaker.joinChannel(b);flush();
+  listener.setMonitor(b.id,false);
+  listener.setScan(true);
+  assert.equal(listener.getScreenId(),a.id);
+  speaker.startPTT(speaker.sessions.get(b.id));flush();
+  listener.scanTick();
+  assert.equal(listener.getScreenId(),a.id,'muted channel transmission must not pop up');
+  assert.equal(listener.getFocusId(),a.id);
+  for(const device of [listener,speaker])for(const id of [...device.sessions.keys()])device.leaveChannel(id);
 });
