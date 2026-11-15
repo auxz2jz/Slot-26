@@ -35,6 +35,7 @@ const ui = {
   transcriptClear:$('transcriptClear'),transcriptAutoPopup:$('transcriptAutoPopup'),
   transcriptOpen:$('transcriptOpen'),transcriptPopup:$('transcriptPopup'),
   transcriptPopupLog:$('transcriptPopupLog'),transcriptClose:$('transcriptClose'),
+  transcriptEngine:$('transcriptEngine'),asrLoad:$('asrLoad'),asrState:$('asrState'),
   speechDiagBadge:$('speechDiagBadge'),speechDiagSummary:$('speechDiagSummary'),
   speechDiagnosticLog:$('speechDiagnosticLog'),speechTest:$('speechTest'),
   speechTestPreview:$('speechTestPreview'),speechCopyDiagnostics:$('speechCopyDiagnostics')
@@ -46,6 +47,7 @@ const LAYOUT_KEY='relay-one.layout.v6.2';
 const RADIO_MODE_KEY='relay-one.radio-mode.v6.3';
 const RADIO_SCAN_KEY='relay-one.scan.v6.4', RADIO_HAND_KEY='relay-one.ptt-side.v6.4';
 const TRANSCRIPT_ENABLED_KEY='relay-one.transcribe.v6.5';
+const TRANSCRIPT_ENGINE_KEY='relay-one.transcript-engine.v6.7';
 const TRANSCRIPT_KEEP_KEY='relay-one.transcript-keep.v6.5';
 const TRANSCRIPT_STORE_KEY='relay-one.transcripts.v6.5';
 const TRANSCRIPT_AUTOPOP_KEY='relay-one.transcript-popup.v6.5';
@@ -167,6 +169,7 @@ const DIAGNOSTIC_LIMIT=150;
  * Web Speech may be unavailable or backed by an online browser service.
  */
 let transcriptEnabled=storeGet(TRANSCRIPT_ENABLED_KEY,false)===true;
+let transcriptMode=storeGet(TRANSCRIPT_ENGINE_KEY,'local')==='browser'?'browser':'local';
 let transcriptKeep=storeGet(TRANSCRIPT_KEEP_KEY,false)===true;
 let transcriptEntries=transcriptKeep
   ?storeGet(TRANSCRIPT_STORE_KEY,[]):[];
@@ -221,7 +224,15 @@ function speechDiagnosticReport(){
     s.room.title+': '+(s.track?.readyState||'no track')+', enabled='+Boolean(s.track?.enabled)+
     ', transmitting='+Boolean(s.transmitting)+', floor='+Boolean(s.floor===s.myId));
   return [
-    'Relay One V6.6 speech diagnostics',
+    'Relay One V6.7 speech diagnostics',
+    'Transcription engine: '+transcriptMode,
+    'On-device model state: '+asrState,
+    'On-device recording active: '+Boolean(asrActive),
+    'On-device audio captures: '+asrStats.recorded,
+    'On-device inference queued: '+asrStats.queued,
+    'On-device inference completed: '+asrStats.completed,
+    'On-device errors: '+asrStats.errors,
+    'On-device last error: '+asrStats.lastError,
     'Recorded: '+new Date().toISOString(),
     'Browser: '+(navigator.userAgent||'not exposed'),
     'Secure context: '+String(window.isSecureContext===true),
@@ -411,7 +422,231 @@ function flushSpeechPending(capture){
   if(!capture.voiceStarted)return;
   while(capture.pending.length)transmitCaption(capture.session,capture.pending.shift());
 }
+
+/* V6.7: optional lightweight capture from the already-open PTT microphone
+ * followed by local model inference in a worker. Never opens getUserMedia again
+ * and never blocks the live WebRTC media path. No audio is persisted/uploaded.
+ */
+let asrWorker=null,asrState='not-loaded',asrActive=null,asrNextId=0;
+const asrJobs=new Map();
+const asrStats={recorded:0,queued:0,completed:0,errors:0,lastError:'none'};
+function setAsrStatus(message){
+  if(ui.asrState)ui.asrState.textContent=message;
+}
+function renderAsrControls(){
+  if(ui.transcriptEngine)ui.transcriptEngine.value=transcriptMode;
+  if(ui.asrLoad){
+    ui.asrLoad.disabled=transcriptMode!=='local'||asrState==='loading'||asrState==='ready';
+    ui.asrLoad.textContent=asrState==='ready'?'On-device model ready':
+      asrState==='loading'?'Loading model…':'Download / load on-device speech model';
+  }
+  if(ui.asrState && transcriptMode!=='local')
+    setAsrStatus('Legacy browser speech recognition may conflict with WebRTC microphone on Android.');
+  else if(ui.asrState && asrState==='not-loaded')
+    setAsrStatus('On-device Whisper is not loaded. Tap Download / load once while online.');
+}
+function setTranscriptMode(mode){
+  if(mode!=='local' && mode!=='browser')return;
+  if(transcriptMode!==mode){
+    endSpeechCapture();
+    transcriptMode=mode;
+    storeSet(TRANSCRIPT_ENGINE_KEY,mode);
+    speechEvent('SPEECH MODE',mode);
+  }
+  renderAsrControls();
+  if(transcriptEnabled)transcriptStatus(mode==='local'?
+    (asrState==='ready'?'Whisper ready: talk normally and text will appear after release.':
+      'Tap Download / load on-device speech model to enable PTT captions.'):
+    'Using legacy browser recognizer. On Android it may conflict with radio audio.');
+}
+function initAsrWorker(){
+  if(asrWorker)return asrWorker;
+  if(typeof Worker==='undefined')throw new Error('Web Workers unavailable on this browser');
+  const worker=new Worker('./local-asr-worker.mjs',{type:'module'});
+  asrWorker=worker;
+  worker.onmessage=event=>{
+    const msg=event.data||{};
+    if(msg.type==='engine-state'){
+      asrState=msg.state||'error';
+      setAsrStatus(msg.message||('Model: '+asrState));
+      speechEvent('LOCAL MODEL '+asrState.toUpperCase(),String(msg.message||'').slice(0,130));
+      if(asrState==='ready' && transcriptMode==='local')
+        transcriptStatus('On-device Whisper ready. Hold PTT to speak; text appears after release.');
+      renderAsrControls();
+    }else if(msg.type==='engine-progress'){
+      if(transcriptMode==='local')setAsrStatus('Downloading model assets: '+Math.round(msg.percent||0)+'% (per file)');
+    }else if(msg.type==='job-state'){
+      if(msg.state==='processing') {
+        speechEvent('LOCAL DECODING','job '+msg.id);
+        if(transcriptMode==='local')transcriptStatus('Transcribing recorded PTT audio on this device…');
+      }
+    }else if(msg.type==='job-result'){
+      const session=asrJobs.get(msg.id);asrJobs.delete(msg.id);
+      asrStats.completed++;
+      const result=String(msg.text||'').trim().slice(0,400);
+      speechEvent('LOCAL TRANSCRIPT COMPLETE','job '+msg.id+'; characters '+result.length);
+      if(result && transcriptEnabled && transcriptMode==='local' && session && sessions.get(session.publicId)===session)
+        transmitCaption(session,result);
+      if(transcriptMode==='local')transcriptStatus(result?'Transcript completed and sent to joined channel.':
+        'No recognizable words in recorded audio.');
+    }else if(msg.type==='job-error'){
+      asrJobs.delete(msg.id);asrStats.errors++;
+      asrStats.lastError=String(msg.error||'unknown').slice(0,130);
+      speechEvent('LOCAL TRANSCRIPT ERROR','job '+msg.id+'; '+asrStats.lastError);
+      if(transcriptMode==='local')transcriptStatus('Local transcription failed: '+asrStats.lastError);
+    }
+  };
+  worker.onerror=event=>{
+    asrState='error';asrStats.errors++;
+    asrStats.lastError=String(event?.message||'Worker could not load').slice(0,130);
+    speechEvent('LOCAL WORKER ERROR',asrStats.lastError);
+    setAsrStatus('Model worker error: '+asrStats.lastError);
+    try{asrWorker?.terminate();}catch{}
+    asrWorker=null;renderAsrControls();
+  };
+  return worker;
+}
+function loadLocalAsr(){
+  try{
+    if(asrState==='ready'||asrState==='loading')return;
+    asrState='loading';renderAsrControls();
+    setAsrStatus('Preparing on-device English speech model. This may take time and data.');
+    speechEvent('LOCAL MODEL REQUESTED','No microphone request');
+    initAsrWorker().postMessage({type:'load'});
+  }catch(err){
+    asrState='error';asrStats.lastError=String(err?.message||'unavailable').slice(0,130);
+    setAsrStatus('Cannot load model: '+asrStats.lastError);
+    speechEvent('LOCAL MODEL ERROR',asrStats.lastError);
+    renderAsrControls();
+  }
+}
+function localMediaMime(){
+  const Media=window.MediaRecorder;
+  if(typeof Media!=='function')return null;
+  for(const t of ['audio/webm;codecs=opus','audio/webm','audio/mp4']){
+    if(typeof Media.isTypeSupported!=='function'||Media.isTypeSupported(t))return t;
+  }
+  return '';
+}
+function startLocalCapture(session){
+  if(!transcriptEnabled||transcriptMode!=='local'||!session)return;
+  if(asrState!=='ready'){
+    speechEvent('LOCAL CAPTURE SKIPPED','Model not ready');
+    transcriptStatus('Voice sent. Download / load the on-device model to enable captions.');
+    return;
+  }
+  if(asrActive)return;
+  let clone=null;
+  try{
+    const mime=localMediaMime();
+    if(mime===null)throw new Error('MediaRecorder is not supported');
+    if(!session.track || session.track.readyState!=='live')throw new Error('Radio track is not live');
+    clone=session.track.clone();clone.enabled=true;
+    const stream=new MediaStream([clone]);
+    const recorder=new window.MediaRecorder(stream,mime?{mimeType:mime}:{});
+    const capture={session,recorder,clone,chunks:[],started:Date.now(),stopped:false};
+    asrActive=capture;
+    recorder.ondataavailable=e=>{if(e.data?.size)capture.chunks.push(e.data);};
+    recorder.onerror=e=>{
+      speechEvent('LOCAL RECORDER ERROR',String(e?.error?.name||'unknown'));
+      asrStats.errors++;
+    };
+    recorder.onstop=()=>{
+      if(asrActive===capture)asrActive=null;
+      try{clone.stop();}catch{}
+      const type=recorder.mimeType||mime||'audio/webm';
+      const bytes=capture.chunks.reduce((n,chunk)=>n+chunk.size,0);
+      speechEvent('LOCAL AUDIO CAPTURED','bytes '+bytes+'; duration '+(Date.now()-capture.started)+'ms');
+      if(bytes>1000 && transcriptEnabled && transcriptMode==='local')
+        void decodeLocalPttAudio(capture.session,new Blob(capture.chunks,{type}));
+      else if(bytes<=1000 && transcriptMode==='local')
+        transcriptStatus('No recorded speech audio found. Check local transcription diagnostics.');
+    };
+    recorder.start();
+    asrStats.recorded++;
+    speechEvent('LOCAL RECORDING STARTED','using existing radio track');
+  }catch(err){
+    try{clone?.stop();}catch{}
+    asrActive=null;asrStats.errors++;
+    asrStats.lastError=String(err?.message||'capture failed').slice(0,130);
+    speechEvent('LOCAL CAPTURE ERROR',asrStats.lastError);
+    transcriptStatus('Could not capture shared radio audio: '+asrStats.lastError);
+  }
+}
+function stopLocalCapture(session=null){
+  const c=asrActive;
+  if(!c || session && c.session!==session)return;
+  asrActive=null;
+  if(c.stopped)return;
+  c.stopped=true;
+  try{
+    if(c.recorder.state!=='inactive')c.recorder.stop();
+    else c.clone.stop();
+  }catch(err){
+    try{c.clone.stop();}catch{}
+    speechEvent('LOCAL RECORDER STOP ERROR',String(err?.name||'unknown'));
+  }
+}
+function downsample16k(buffer,maxDuration=72){
+  const rate=buffer.sampleRate,len=Math.min(buffer.length,Math.round(rate*maxDuration));
+  const outputLength=Math.floor(len*16000/rate);
+  if(!Number.isFinite(rate)||rate<=0||outputLength<=0)throw new Error('Decoded audio was empty');
+  const result=new Float32Array(outputLength);
+  const channels=Array.from({length:Math.min(2,buffer.numberOfChannels)},
+    (_,i)=>buffer.getChannelData(i));
+  for(let i=0;i<outputLength;i++){
+    const pos=i*rate/16000,j=Math.floor(pos),frac=pos-j;
+    let sum=0;
+    for(const ch of channels)sum+=ch[j]*(1-frac)+(ch[Math.min(j+1,len-1)]||0)*frac;
+    result[i]=sum/channels.length;
+  }
+  return result;
+}
+async function decodeLocalPttAudio(session,blob){
+  let ctx=null;
+  try{
+    const AudioCtor=window.AudioContext||window.webkitAudioContext;
+    if(!AudioCtor)throw new Error('Audio decoding is unavailable');
+    ctx=new AudioCtor();
+    const decoded=await ctx.decodeAudioData(await blob.arrayBuffer());
+    const pcm=downsample16k(decoded);
+    let power=0;
+    for(let i=0;i<pcm.length;i+=64)power+=pcm[i]*pcm[i];
+    const rms=Math.sqrt(power/Math.ceil(pcm.length/64));
+    speechEvent('LOCAL AUDIO DECODED','duration '+(pcm.length/16000).toFixed(1)+'s; RMS '+rms.toFixed(4));
+    if(rms<0.002){
+      transcriptStatus('Recorded radio audio was quiet or silent; no text generated.');
+      speechEvent('LOCAL AUDIO TOO QUIET','level below threshold');
+      return;
+    }
+    // Whisper processes up to 25s at once. Cap at three queued chunks to avoid
+    // excessive CPU load and retain bounded audio memory on mobile devices.
+    const step=24*16000;
+    for(let offset=0;offset<pcm.length;offset+=step){
+      const chunk=pcm.slice(offset,Math.min(offset+step,pcm.length));
+      const id=++asrNextId;
+      asrJobs.set(id,session);asrStats.queued++;
+      initAsrWorker().postMessage({type:'transcribe',id,audio:chunk.buffer},[chunk.buffer]);
+    }
+    if(decoded.duration>72)speechEvent('LOCAL AUDIO TRUNCATED','only first 72s processed');
+    transcriptStatus('PTT audio recorded. Local transcription queued; voice channel stays active.');
+  }catch(err){
+    asrStats.errors++;asrStats.lastError=String(err?.message||'audio decode failed').slice(0,130);
+    speechEvent('LOCAL AUDIO PROCESS ERROR',asrStats.lastError);
+    transcriptStatus('Local audio decoding failed: '+asrStats.lastError);
+  }finally{
+    try{await ctx?.close();}catch{}
+  }
+}
+ui.transcriptEngine?.addEventListener('change',()=>setTranscriptMode(ui.transcriptEngine.value));
+ui.asrLoad?.addEventListener('click',loadLocalAsr);
+renderAsrControls();
+
 function beginSpeechCapture(session){
+  if(transcriptMode==='local'){
+    speechStats.lastPTT='pressed on '+(session?.room?.title||'unknown channel');
+    return;
+  }
   speechStats.lastPTT='pressed on '+(session?.room?.title||'unknown channel');
   if(!transcriptEnabled){speechEvent('PTT CAPTIONS DISABLED');return;}
   if(!SpeechEngine){
@@ -514,6 +749,11 @@ function beginSpeechCapture(session){
   }
 }
 function speechDidTransmit(session){
+  if(transcriptMode==='local'){
+    speechStats.lastPTT='voice transmitting on '+session.room.title;
+    startLocalCapture(session);
+    return;
+  }
   speechStats.lastPTT='voice transmitting on '+session.room.title;
   if(speechCapture?.session===session){
     speechCapture.voiceStarted=true;
@@ -523,6 +763,7 @@ function speechDidTransmit(session){
     SpeechEngine?'no speech capture active':'SpeechRecognition unsupported');
 }
 function endSpeechCapture(session=null){
+  if(transcriptMode==='local')stopLocalCapture(session);
   const c=speechCapture;
   if(!c || session && c.session!==session)return;
   speechCapture=null;
@@ -537,10 +778,14 @@ function setTranscriptEnabled(enabled){
   transcriptEnabled=Boolean(enabled);storeSet(TRANSCRIPT_ENABLED_KEY,transcriptEnabled);
   if(ui.transcriptEnabled)ui.transcriptEnabled.checked=transcriptEnabled;
   if(!transcriptEnabled){endSpeechCapture();transcriptStatus('Your speech recognition is off. Incoming captions can still appear.');}
-  else if(!SpeechEngine)transcriptStatus('Speech recognition is unavailable in this browser. Incoming captions can still appear.');
-  else transcriptStatus('Ready. Hold Talk to transcribe your voice; results may appear after release.');
+  else if(transcriptMode==='local')transcriptStatus(asrState==='ready'?
+    'On-device Whisper ready. Text appears after PTT is released.':
+    'On-device model not loaded. Tap Download / load on-device speech model first.');
+  else if(!SpeechEngine)transcriptStatus('Legacy browser recognition is unavailable in this browser.');
+  else transcriptStatus('Legacy browser recognition is ready; it may conflict with radio audio on Android.');
   speechEvent(transcriptEnabled?'CAPTIONS ENABLED':'CAPTIONS DISABLED',
-    SpeechEngine?'Speech API present':'Speech API unavailable');
+    transcriptMode==='local'?'on-device engine '+asrState:
+    SpeechEngine?'legacy Speech API present':'legacy Speech API unavailable');
 }
 if(ui.transcriptEnabled)ui.transcriptEnabled.addEventListener('change',()=>{
   setTranscriptEnabled(ui.transcriptEnabled.checked);
@@ -598,7 +843,7 @@ function diagnosticReport(){
       ', voice '+audio+'/'+peers.length+', ICE '+ice;
   });
   const data=usageMeter.snapshot();
-  return ['Relay One V6.6 connection diagnostics',
+  return ['Relay One V6.7 connection diagnostics',
     'Radio mode: '+radioMode,
     'Estimated WebRTC session: sent '+formatDataBytes(data.session.tx)+', received '+formatDataBytes(data.session.rx),
     'Estimated saved: sent '+formatDataBytes(data.saved.tx)+', received '+formatDataBytes(data.saved.rx),
