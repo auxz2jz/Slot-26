@@ -1,8 +1,24 @@
-# Relay One — Basic / Advanced Shared Radio (Version 6.3)
+# Relay One — Handheld Radio and Visual Scan (Version 6.4)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
 
 This is a browser-based push-to-talk prototype for a shared set of **ten fixed channels**. Every user sees the exact same channels. No individual invitation, channel creation, or channel distribution is required.
+
+## V6.4 — Handheld radio interface and visual scan
+
+The live GitHub Pages prototype now opens to a phone-friendly, handheld-style radio face:
+
+- **Center LCD** shows the channel number/title (site name when separately configured), joined status, people, and on-air user. **CH − / CH +** and horizontal screen swipes let users browse allowed channels.
+- **Large side PTT** defaults to the right and can be switched to the left. The choice persists on this browser. The PTT target always has an explicit channel number.
+- **Join/Leave**, **Monitor**, and **Call** buttons act on the channel displayed in manual mode. The existing Basic (01–02) / Advanced (01–10) mode switch remains available on the main radio screen.
+- **Scan** is a **visual-only simulation**: it cycles the LCD through *joined, monitored* channels without leaving or rejoining them, muting channels, or renegotiating media. All those monitored WebRTC audio sessions stay connected and audible, as before.
+- On **incoming PTT activity on any joined, monitored channel**, the LCD immediately presents the active channel; the PTT target intentionally switches to it so the operator can reply. The display holds briefly after transmission stops and then resumes its visual scan. Unjoined and unmonitored channels do not trigger this.
+- **Safety rule:** During the idle scan animation, the display may preview a different channel, but the physical **PTT target remains fixed and explicitly labeled**. PTT transmission cannot be silently redirected by the visual sweep. Join/Leave, Monitor and Call buttons are disabled while scanning to avoid actions on an animated preview; pressing channel navigation exits Scan and resumes manual selection.
+- Profiles, diagnostics, usage estimates, full channel manager and the Compact/Detailed list controls are still available below the main radio, with profile and channel manager collapsed by default.
+- **Existing microphone and PeerJS/WebRTC behavior is unchanged:** joined channels still acquire a microphone track but keep it disabled until PTT. This release does **not** add a mic-on-demand feature or promise mobile background-audio reliability.
+- The prototype has not been changed into a production authenticated employee radio system. Browser PINs are still nonsecure demos.
+
+**Rollback:** https://auxz2jz.github.io/Slot-26/legacy-v6-3.html
 
 ## V6.3 — Basic and Advanced radio modes (GitHub Pages prototype)
 
