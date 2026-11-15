@@ -22,7 +22,7 @@
   <section class="card handheld-radio" aria-label="Handheld radio controls">
     <div class="handheld-topline">
       <span class="micro-label">RELAY ONE / HANDHELD</span>
-      <span class="radio-scan-led" id="scanIndicator">SCAN OFF</span>
+      <div class="radio-top-actions"><span class="radio-scan-led" id="scanIndicator">SCAN OFF</span><button id="transcriptOpen" type="button" class="secondary radio-text-button" aria-label="Open radio text popup">Text</button></div>
     </div>
     <div class="radio-housing" id="radioHousing">
       <div class="radio-side-ptt">
@@ -86,6 +86,10 @@
       <label class="setting-toggle">
         <input id="transcriptKeep" type="checkbox">
         Keep transcript on this device
+      </label>
+      <label class="setting-toggle">
+        <input id="transcriptAutoPopup" type="checkbox" checked>
+        Pop up new messages
       </label>
     </div>
     <p id="transcriptStatus" class="small muted" role="status" aria-live="polite">Turn on transcription to caption your transmitted speech. Received captions appear when other users transcribe.</p>
@@ -186,6 +190,15 @@
 
   <footer>Encrypted WebRTC voice • Per-channel talk and monitoring • Working prototype</footer>
 </main>
+<aside id="transcriptPopup" class="transcript-popup hidden" role="region" aria-label="Radio text popup">
+  <div class="transcript-popup-head">
+    <strong>Radio text</strong>
+    <button id="transcriptClose" type="button" class="secondary">Hide</button>
+  </div>
+  <div id="transcriptPopupLog" class="transcript-popup-messages" role="log" aria-live="polite">
+    <p class="transcript-empty">No radio messages yet.</p>
+  </div>
+</aside>
 <div id="remoteAudio" aria-hidden="true"></div>
 </body>
 </html>
