@@ -28,7 +28,11 @@ const ui = {
   radioPttTarget:$('radioPttTarget'),radioScreenMessage:$('radioScreenMessage'),
   prevChannel:$('prevChannel'),nextChannel:$('nextChannel'),
   radioJoin:$('radioJoin'),radioMonitor:$('radioMonitor'),radioCall:$('radioCall'),
-  radioScan:$('radioScan'),leftHanded:$('leftHanded'),rightHanded:$('rightHanded')
+  radioScan:$('radioScan'),leftHanded:$('leftHanded'),rightHanded:$('rightHanded'),
+  transcriptEnabled:$('transcriptEnabled'),transcriptKeep:$('transcriptKeep'),
+  transcriptStatus:$('transcriptStatus'),transcriptLog:$('transcriptLog'),
+  transcriptCount:$('transcriptCount'),transcriptCopy:$('transcriptCopy'),
+  transcriptClear:$('transcriptClear')
 };
 const PROFILE_KEY='relay-one.profile.v4';
 const MONITOR_KEY='relay-one.monitor.v5';
@@ -36,6 +40,10 @@ const ACTIVE_KEY='relay-one.joined.v5';
 const LAYOUT_KEY='relay-one.layout.v6.2';
 const RADIO_MODE_KEY='relay-one.radio-mode.v6.3';
 const RADIO_SCAN_KEY='relay-one.scan.v6.4', RADIO_HAND_KEY='relay-one.ptt-side.v6.4';
+const TRANSCRIPT_ENABLED_KEY='relay-one.transcribe.v6.5';
+const TRANSCRIPT_KEEP_KEY='relay-one.transcript-keep.v6.5';
+const TRANSCRIPT_STORE_KEY='relay-one.transcripts.v6.5';
+const TRANSCRIPT_MAX=120, TRANSCRIPT_TEXT_MAX=400;
 const MAX_ACTIVE=MAX_SELECTED_CHANNELS, PING_EVERY=5000, STALE_AFTER=40000, PENDING_AFTER=10000;
 const storeGet=(key,defaultValue)=>{try{return JSON.parse(localStorage.getItem(key))??defaultValue;}catch{return defaultValue;}};
 const storeSet=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{}};
@@ -147,6 +155,163 @@ const SCAN_STEP_MS=1400,SCAN_HOLD_MS=2400;
 let joinInProgress=0;
 const diagnosticEvents=[];
 const DIAGNOSTIC_LIMIT=150;
+/* Optional text alongside PTT voice. Recognition is independent of PeerJS media.
+ * Each speaker recognizes their own mic, then broadcasts FINAL strings through the
+ * already-established room data connections. No voice streams are renegotiated.
+ * Web Speech may be unavailable or backed by an online browser service.
+ */
+let transcriptEnabled=storeGet(TRANSCRIPT_ENABLED_KEY,false)===true;
+let transcriptKeep=storeGet(TRANSCRIPT_KEEP_KEY,false)===true;
+let transcriptEntries=transcriptKeep
+  ?storeGet(TRANSCRIPT_STORE_KEY,[]):[];
+if(!Array.isArray(transcriptEntries))transcriptEntries=[];
+transcriptEntries=transcriptEntries.filter(item=>item && typeof item.text==='string' &&
+  item.text.length<=TRANSCRIPT_TEXT_MAX && typeof item.channel==='string' &&
+  typeof item.name==='string' && ['tx','rx'].includes(item.direction)).slice(-TRANSCRIPT_MAX);
+let speechCapture=null;
+const SpeechEngine=window.SpeechRecognition||window.webkitSpeechRecognition||null;
+function transcriptStatus(text){if(ui.transcriptStatus)ui.transcriptStatus.textContent=text;}
+function transcriptStamp(time){return new Date(time).toLocaleTimeString([],{
+  hour:'2-digit',minute:'2-digit',second:'2-digit'
+});}
+function renderTranscript(){
+  if(!ui.transcriptLog)return;
+  const nearBottom=ui.transcriptLog.scrollHeight-ui.transcriptLog.scrollTop-ui.transcriptLog.clientHeight<80;
+  ui.transcriptLog.replaceChildren();
+  if(!transcriptEntries.length){
+    const empty=document.createElement('p');
+    empty.className='transcript-empty';
+    empty.textContent='No transcribed radio messages yet.';
+    ui.transcriptLog.appendChild(empty);
+  }
+  for(const item of transcriptEntries){
+    const entry=document.createElement('div');entry.className='transcript-entry '+item.direction;
+    const meta=document.createElement('div');meta.className='transcript-meta';
+    const name=document.createElement('strong');
+    name.textContent=item.direction==='tx'?'You · '+item.name:item.name;
+    const details=document.createElement('span');
+    details.textContent=item.channel+' · '+transcriptStamp(item.at)+' · '+(item.direction==='tx'?'SENT':'RECEIVED');
+    meta.append(name,details);
+    const words=document.createElement('p');words.textContent=item.text;
+    entry.append(meta,words);ui.transcriptLog.appendChild(entry);
+  }
+  if(nearBottom)ui.transcriptLog.scrollTop=ui.transcriptLog.scrollHeight;
+  if(ui.transcriptCount)ui.transcriptCount.textContent=transcriptEntries.length+
+    (transcriptEntries.length===1?' message':' messages');
+}
+function persistTranscripts(){
+  if(transcriptKeep)storeSet(TRANSCRIPT_STORE_KEY,transcriptEntries);
+  else try{localStorage.removeItem(TRANSCRIPT_STORE_KEY);}catch{}
+}
+function appendTranscript(direction,session,name,words){
+  if(typeof words!=='string')return false;
+  const text=words.replace(/\\s+/g,' ').trim().slice(0,TRANSCRIPT_TEXT_MAX);
+  if(!text || !session)return false;
+  transcriptEntries.push({direction,channel:session.room.title,name:cleanName(name),
+    text,at:Date.now()});
+  if(transcriptEntries.length>TRANSCRIPT_MAX)transcriptEntries=transcriptEntries.slice(-TRANSCRIPT_MAX);
+  persistTranscripts();renderTranscript();
+  return true;
+}
+function transmitCaption(session,text){
+  if(!session || session.stopped || sessions.get(session.publicId)!==session)return;
+  const clipped=text.slice(0,TRANSCRIPT_TEXT_MAX);
+  if(appendTranscript('tx',session,profile.name,clipped))
+    session.broadcast({type:'caption',text:clipped});
+}
+function flushSpeechPending(capture){
+  if(!capture.voiceStarted)return;
+  while(capture.pending.length)transmitCaption(capture.session,capture.pending.shift());
+}
+function beginSpeechCapture(session){
+  if(!transcriptEnabled||!SpeechEngine||!session)return;
+  if(speechCapture)endSpeechCapture();
+  try{
+    const speech=new SpeechEngine();
+    speech.lang='en-US';
+    speech.continuous=true;
+    speech.interimResults=true;
+    speech.maxAlternatives=1;
+    const capture={speech,session,pending:[],seen:new Set(),
+      voiceStarted:session.transmitting===true,ended:false};
+    speechCapture=capture;
+    speech.onresult=event=>{
+      if(!transcriptEnabled)return;
+      for(let i=event.resultIndex||0;i<(event.results?.length||0);i++){
+        const result=event.results[i];
+        if(!result?.isFinal||capture.seen.has(i))continue;
+        capture.seen.add(i);
+        const text=String(result[0]?.transcript||'').trim();
+        if(text)capture.pending.push(text);
+      }
+      flushSpeechPending(capture);
+    };
+    speech.onerror=event=>{
+      transcriptStatus('Caption recognition unavailable ('+(event?.error||'error')+
+        '). Radio voice still works. You can turn transcription off.');
+    };
+    speech.onend=()=>{
+      capture.ended=true;
+      if(speechCapture===capture)speechCapture=null;
+      if(transcriptEnabled && (!selectedTx||selectedTx!==session))
+        transcriptStatus('Ready for the next PTT. Final text may take a moment.');
+    };
+    // Calling from PTT pointerdown retains the required user gesture in supporting browsers.
+    speech.start();
+    transcriptStatus('Listening for PTT speech… voice transmits normally.');
+  }catch(error){
+    speechCapture=null;
+    transcriptStatus('Captions could not start on this browser. Radio voice remains available.');
+  }
+}
+function speechDidTransmit(session){
+  if(speechCapture?.session===session){
+    speechCapture.voiceStarted=true;
+    flushSpeechPending(speechCapture);
+  }
+}
+function endSpeechCapture(session=null){
+  const c=speechCapture;
+  if(!c || session && c.session!==session)return;
+  speechCapture=null;
+  try{c.speech.stop();}catch{}
+  if(transcriptEnabled)transcriptStatus('Finishing speech recognition…');
+}
+function setTranscriptEnabled(enabled){
+  transcriptEnabled=Boolean(enabled);storeSet(TRANSCRIPT_ENABLED_KEY,transcriptEnabled);
+  if(ui.transcriptEnabled)ui.transcriptEnabled.checked=transcriptEnabled;
+  if(!transcriptEnabled){endSpeechCapture();transcriptStatus('Your speech recognition is off. Incoming captions can still appear.');}
+  else if(!SpeechEngine)transcriptStatus('Speech recognition is unavailable in this browser. Incoming captions can still appear.');
+  else transcriptStatus('Ready. Hold Talk to transcribe your voice; results may appear after release.');
+}
+if(ui.transcriptEnabled)ui.transcriptEnabled.addEventListener('change',()=>{
+  setTranscriptEnabled(ui.transcriptEnabled.checked);
+});
+if(ui.transcriptKeep)ui.transcriptKeep.addEventListener('change',()=>{
+  transcriptKeep=ui.transcriptKeep.checked;
+  storeSet(TRANSCRIPT_KEEP_KEY,transcriptKeep);
+  persistTranscripts();
+});
+if(ui.transcriptCopy)ui.transcriptCopy.addEventListener('click',async()=>{
+  const lines=transcriptEntries.map(item=>'['+transcriptStamp(item.at)+'] '+
+    item.channel+' | '+(item.direction==='tx'?'You ('+item.name+')':item.name)+
+    ' | '+item.text);
+  const text=lines.join('\\n');
+  try{
+    if(!navigator.clipboard?.writeText)throw Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(text);
+    transcriptStatus('Conversation copied. '+lines.length+' message(s).');
+  }catch{window.prompt('Copy radio conversation:',text);}
+});
+if(ui.transcriptClear)ui.transcriptClear.addEventListener('click',()=>{
+  if(!window.confirm('Clear all transcript text from this browser?'))return;
+  transcriptEntries=[];persistTranscripts();renderTranscript();
+  transcriptStatus('Transcript cleared. Voice channels are unchanged.');
+});
+if(ui.transcriptKeep)ui.transcriptKeep.checked=transcriptKeep;
+setTranscriptEnabled(transcriptEnabled);
+renderTranscript();
+
 let nextMediaNegotiation=0;
 const MEDIA_NEGOTIATION_GAP=650, MEDIA_SETTLE_MS=250;
 function logRadio(event,channel='',detail=''){
@@ -167,7 +332,7 @@ function diagnosticReport(){
       ', voice '+audio+'/'+peers.length+', ICE '+ice;
   });
   const data=usageMeter.snapshot();
-  return ['Relay One V6.3 connection diagnostics',
+  return ['Relay One V6.5 connection diagnostics',
     'Radio mode: '+radioMode,
     'Estimated WebRTC session: sent '+formatDataBytes(data.session.tx)+', received '+formatDataBytes(data.session.rx),
     'Estimated saved: sent '+formatDataBytes(data.saved.tx)+', received '+formatDataBytes(data.saved.rx),
@@ -354,10 +519,11 @@ function startPTT(s){
   if(s.isHost){if(!s.floor)s.setFloor(s.myId,profile.txTone);}
   else s.send(s.hostId(),{type:'request',tone:profile.txTone});
   updateAll();
+  beginSpeechCapture(s);
 }
 function releaseTalk(s){
   if(!s)return;
-  s.wantTalk=false;s.disableTransmit();logRadio('PTT RELEASED',s.room.title);
+  s.wantTalk=false;s.disableTransmit();endSpeechCapture(s);logRadio('PTT RELEASED',s.room.title);
   if(selectedTx===s)selectedTx=null;
   for(const other of sessions.values())other.applyAudioOutput();
   if(s.isHost){if(s.floor===s.myId)s.setFloor(null);}
@@ -384,7 +550,7 @@ document.addEventListener('visibilitychange',()=>{
   if(!document.hidden)for(const s of sessions.values())s.reconnectSignaling();
 });
 window.addEventListener('online',()=>{for(const s of sessions.values())s.reconnectSignaling();});
-window.addEventListener('pagehide',()=>{void sampleDataUsage();if(selectedTx)releaseTalk(selectedTx);for(const s of sessions.values())s.stop();});
+window.addEventListener('pagehide',()=>{endSpeechCapture();void sampleDataUsage();if(selectedTx)releaseTalk(selectedTx);for(const s of sessions.values())s.stop();});
 
 class ChannelSession{
   constructor(publicRoom,effectiveId,track,stream,monitor){
@@ -444,7 +610,7 @@ class ChannelSession{
     const open=()=>{
       this.toneTimer=null;
       if(this.wantTalk && selectedTx===this && this.floor===this.myId && !this.stopped){
-        this.track.enabled=true;this.transmitting=true;updateRow(this.publicId);updateQuick();
+        this.track.enabled=true;this.transmitting=true;speechDidTransmit(this);updateRow(this.publicId);updateQuick();
       }
     };
     if(newFloor && profile.txTone)this.toneTimer=setTimeout(open,290);
@@ -663,6 +829,12 @@ class ChannelSession{
         break;
       case 'floor-live':
         if(this.isHost && this.floor===id)this.floorAt=Date.now();
+        break;
+      case 'caption':
+        // Captions are sent directly by a room member through an existing data link.
+        // Never display text from unjoined rooms or from muted channels.
+        if(this.monitor && typeof msg.text==='string' && msg.text.length<=TRANSCRIPT_TEXT_MAX)
+          appendTranscript('rx',this,m.name,msg.text);
         break;
       case 'call':
         if(this.monitor){
