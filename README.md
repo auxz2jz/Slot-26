@@ -1,8 +1,25 @@
-# Relay One — Handheld Radio with Optional Voice Transcripts (Version 6.5)
+# Relay One — Handheld Radio with Speech Diagnostics (Version 6.6)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
 
 This is a browser-based push-to-talk prototype for a shared set of **ten fixed channels**. Every user sees the exact same channels. No individual invitation, channel creation, or channel distribution is required.
+
+## V6.6 — Speech recognition diagnostics and isolated device test
+
+An initial single-phone test showed a radio session could join and PTT could start/stop, yet no caption appeared. Previously the general connection log did not distinguish speech-recognition API support, engine-start, microphone-audio events, voice floor status, final/interim recognition, or recognizer errors. Error messages could also disappear when a recognizer stopped.
+
+**New troubleshooting tools:**
+- Expand **Radio conversation → Speech-to-text diagnostics**.
+- Read **API available/unavailable**, attempt/start/audio/speech/final/error counts, last state and last error.
+- **Test speech recognition** starts a **local-only** test independently of PTT and even with zero radios joined. Say a short phrase; tap again to stop. Recognized words appear only in the test preview: no radio transmission, no message in conversation history, no transcript sent to peers.
+- **Copy speech diagnostics** exports browser API presence, user setting, voice/recognizer state, counters, error codes and timestamped recognition lifecycle events. **No transcripts, callsigns, room IDs, PINs, voice or actual speech text are included.** Existing **Copy diagnostic log** also appends the speech diagnostic report.
+- When PTT is held with transcription enabled, the log tracks recognition request, `start`, audio-start, speech-start, interim/final results, errors, stop, and whether the actual radio voice floor activated.
+- Error messages persist after recognition ends. An unsupported API or no detected speech is distinguished from a successful transcript.
+- PTT audio, channel/scan logic, and voice negotiation are unchanged. Transcription remains optional; it is not guaranteed by browser/API support alone.
+
+**Suggested single-device test:** Join Channel 01, enable **Transcribe my PTT speech**, hold Talk and speak for a few seconds, release, then expand **Speech-to-text diagnostics** and copy the output. If recognition doesn't start, tap **Test speech recognition** and speak to determine whether the browser speech API works at all on that phone.
+
+**Rollback:** https://auxz2jz.github.io/Slot-26/legacy-v6-5.html
 
 ## V6.5 — Experimental per-channel speech-to-text conversation panel
 
