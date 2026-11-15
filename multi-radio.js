@@ -174,6 +174,7 @@ transcriptEntries=transcriptEntries.filter(item=>item && typeof item.text==='str
 let speechCapture=null;
 let autoTranscriptPopup=storeGet(TRANSCRIPT_AUTOPOP_KEY,true)!==false;
 let transcriptPopupOpen=false;
+let transcriptPopupPending=false;
 const SpeechEngine=window.SpeechRecognition||window.webkitSpeechRecognition||null;
 function transcriptStatus(text){if(ui.transcriptStatus)ui.transcriptStatus.textContent=text;}
 function transcriptStamp(time){return new Date(time).toLocaleTimeString([],{
@@ -246,7 +247,10 @@ function appendTranscript(direction,session,name,words){
     text,at:Date.now()});
   if(transcriptEntries.length>TRANSCRIPT_MAX)transcriptEntries=transcriptEntries.slice(-TRANSCRIPT_MAX);
   persistTranscripts();renderTranscript();
-  if(autoTranscriptPopup && !selectedTx)openTranscriptPopup();
+  if(autoTranscriptPopup){
+    if(selectedTx)transcriptPopupPending=true;
+    else openTranscriptPopup();
+  }
   return true;
 }
 function transmitCaption(session,text){
@@ -326,6 +330,7 @@ if(ui.transcriptEnabled)ui.transcriptEnabled.addEventListener('change',()=>{
 if(ui.transcriptAutoPopup)ui.transcriptAutoPopup.addEventListener('change',()=>{
   autoTranscriptPopup=ui.transcriptAutoPopup.checked;
   storeSet(TRANSCRIPT_AUTOPOP_KEY,autoTranscriptPopup);
+  if(!autoTranscriptPopup)transcriptPopupPending=false;
 });
 ui.transcriptOpen?.addEventListener('click',openTranscriptPopup);
 ui.transcriptClose?.addEventListener('click',closeTranscriptPopup);
@@ -568,6 +573,10 @@ function releaseTalk(s){
   if(!s)return;
   s.wantTalk=false;s.disableTransmit();endSpeechCapture(s);logRadio('PTT RELEASED',s.room.title);
   if(selectedTx===s)selectedTx=null;
+  if(transcriptPopupPending && autoTranscriptPopup){
+    transcriptPopupPending=false;
+    openTranscriptPopup();
+  }
   for(const other of sessions.values())other.applyAudioOutput();
   if(s.isHost){if(s.floor===s.myId)s.setFloor(null);}
   else if(s.ready())s.send(s.hostId(),{type:'release'});
