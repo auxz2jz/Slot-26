@@ -34,7 +34,10 @@ const ui = {
   transcriptCount:$('transcriptCount'),transcriptCopy:$('transcriptCopy'),
   transcriptClear:$('transcriptClear'),transcriptAutoPopup:$('transcriptAutoPopup'),
   transcriptOpen:$('transcriptOpen'),transcriptPopup:$('transcriptPopup'),
-  transcriptPopupLog:$('transcriptPopupLog'),transcriptClose:$('transcriptClose')
+  transcriptPopupLog:$('transcriptPopupLog'),transcriptClose:$('transcriptClose'),
+  speechDiagBadge:$('speechDiagBadge'),speechDiagSummary:$('speechDiagSummary'),
+  speechDiagnosticLog:$('speechDiagnosticLog'),speechTest:$('speechTest'),
+  speechTestPreview:$('speechTestPreview'),speechCopyDiagnostics:$('speechCopyDiagnostics')
 };
 const PROFILE_KEY='relay-one.profile.v4';
 const MONITOR_KEY='relay-one.monitor.v5';
@@ -176,6 +179,149 @@ let autoTranscriptPopup=storeGet(TRANSCRIPT_AUTOPOP_KEY,true)!==false;
 let transcriptPopupOpen=false;
 let transcriptPopupPending=false;
 const SpeechEngine=window.SpeechRecognition||window.webkitSpeechRecognition||null;
+/* Voice-to-text diagnostics: only lifecycle and counts, NEVER recognized speech.
+ * Keep the network-independent walkie-talkie media stream untouched. */
+const speechEvents=[];
+const speechStats={attempts:0,starts:0,audioStarts:0,speechStarts:0,
+  interim:0,finals:0,errors:0,testAttempts:0,testFinals:0,
+  lastError:'none',lastState:'idle',lastPTT:'none'};
+const SPEECH_LOG_LIMIT=100;
+let speechTestCapture=null;
+function speechEvent(kind,detail=''){
+  const line=[new Date().toISOString(),kind,detail].filter(Boolean).join(' | ');
+  speechEvents.push(line);
+  if(speechEvents.length>SPEECH_LOG_LIMIT)speechEvents.shift();
+  speechStats.lastState=kind;
+  logRadio('SPEECH '+kind,'',detail);
+  renderSpeechDiagnostics();
+}
+function renderSpeechDiagnostics(){
+  const supported=Boolean(SpeechEngine);
+  if(ui.speechDiagBadge)ui.speechDiagBadge.textContent=supported?'API available':'API unavailable';
+  if(ui.speechDiagSummary)ui.speechDiagSummary.textContent=
+    'Recognition: '+(supported?'available':'NOT supported')+
+    ' · My captions: '+(transcriptEnabled?'on':'off')+
+    ' · Attempts: '+speechStats.attempts+
+    ' · Started: '+speechStats.starts+
+    ' · Audio start: '+speechStats.audioStarts+
+    ' · Speech detected: '+speechStats.speechStarts+
+    ' · Final results: '+speechStats.finals+
+    ' · Errors: '+speechStats.errors+
+    ' · Last: '+speechStats.lastState+
+    (speechStats.lastError==='none'?'':' ('+speechStats.lastError+')');
+  if(ui.speechDiagnosticLog)ui.speechDiagnosticLog.textContent=
+    speechEvents.length?speechEvents.join('\\n'):'No speech recognition attempts yet.';
+  if(ui.speechTest){
+    ui.speechTest.disabled=!supported;
+    ui.speechTest.textContent=speechTestCapture?'Stop speech test':'Test speech recognition';
+  }
+}
+function speechDiagnosticReport(){
+  const tracks=[...sessions.values()].map(s=>
+    s.room.title+': '+(s.track?.readyState||'no track')+', enabled='+Boolean(s.track?.enabled)+
+    ', transmitting='+Boolean(s.transmitting)+', floor='+Boolean(s.floor===s.myId));
+  return [
+    'Relay One V6.6 speech diagnostics',
+    'Recorded: '+new Date().toISOString(),
+    'Browser: '+(navigator.userAgent||'not exposed'),
+    'Secure context: '+String(window.isSecureContext===true),
+    'SpeechRecognition: '+(window.SpeechRecognition?'present':'absent'),
+    'webkitSpeechRecognition: '+(window.webkitSpeechRecognition?'present':'absent'),
+    'Speech enabled by user: '+transcriptEnabled,
+    'Active recognition: '+Boolean(speechCapture),
+    'Active local test: '+Boolean(speechTestCapture),
+    'PTT held: '+Boolean(selectedTx),
+    'PTT floor acquired: '+Boolean(selectedTx?.floor===selectedTx?.myId),
+    'Last PTT: '+speechStats.lastPTT,
+    'Recognition attempts: '+speechStats.attempts,
+    'Recognition started callbacks: '+speechStats.starts,
+    'Audio started callbacks: '+speechStats.audioStarts,
+    'Speech detected callbacks: '+speechStats.speechStarts,
+    'Interim result updates: '+speechStats.interim,
+    'Final result chunks: '+speechStats.finals,
+    'Recognition errors: '+speechStats.errors,
+    'Last recognition error: '+speechStats.lastError,
+    'Last recognition state: '+speechStats.lastState,
+    'Local test attempts: '+speechStats.testAttempts,
+    'Local test final chunks: '+speechStats.testFinals,
+    'Transcript entries: '+transcriptEntries.length,
+    'Channel tracks:',...tracks,
+    '',
+    'Speech events (text and voice intentionally excluded):',
+    ...speechEvents
+  ].join('\\n');
+}
+function stopSpeechTest(){
+  const c=speechTestCapture;
+  if(!c)return;
+  speechTestCapture=null;
+  try{c.speech.stop();}catch(e){speechEvent('TEST STOP ERROR',e?.name||'unknown');}
+  speechEvent('TEST STOP REQUEST');
+  renderSpeechDiagnostics();
+}
+function runSpeechTest(){
+  if(speechTestCapture){stopSpeechTest();return;}
+  if(!SpeechEngine){speechEvent('TEST UNSUPPORTED');return;}
+  if(selectedTx){speechEvent('TEST BLOCKED','Release PTT first');return;}
+  if(speechCapture)endSpeechCapture();
+  try{
+    const speech=new SpeechEngine();
+    speech.lang='en-US';speech.continuous=true;speech.interimResults=true;speech.maxAlternatives=1;
+    const c={speech,error:false,final:0};
+    speechTestCapture=c;
+    speechStats.testAttempts++;
+    if(ui.speechTestPreview)ui.speechTestPreview.textContent='Listening for a test phrase on this device…';
+    speech.onstart=()=>{speechEvent('TEST ENGINE STARTED');};
+    speech.onaudiostart=()=>speechEvent('TEST MICROPHONE AUDIO START');
+    speech.onspeechstart=()=>speechEvent('TEST SPEECH DETECTED');
+    speech.onresult=e=>{
+      for(let i=e.resultIndex||0;i<(e.results?.length||0);i++){
+        const result=e.results[i];
+        const words=String(result?.[0]?.transcript||'').slice(0,160);
+        if(result?.isFinal){
+          if(!c.seen)c.seen=new Set();
+          if(c.seen.has(i))continue;
+          c.seen.add(i);c.final++;speechStats.testFinals++;
+          speechEvent('TEST FINAL RESULT','characters '+words.length);
+          if(ui.speechTestPreview)ui.speechTestPreview.textContent='Test recognized: '+words;
+        }else if(words){
+          if(ui.speechTestPreview)ui.speechTestPreview.textContent='Hearing (interim): '+words;
+        }
+      }
+    };
+    speech.onerror=e=>{
+      c.error=true;speechStats.lastError=String(e?.error||'unknown').slice(0,60);
+      speechEvent('TEST ERROR',speechStats.lastError);
+      if(ui.speechTestPreview)ui.speechTestPreview.textContent='Test failed: '+speechStats.lastError;
+    };
+    speech.onend=()=>{
+      if(speechTestCapture===c)speechTestCapture=null;
+      speechEvent('TEST END','final chunks '+c.final+(c.error?', error reported':''));
+      if(!c.error&&c.final===0&&ui.speechTestPreview)
+        ui.speechTestPreview.textContent='No final words recognized. Copy speech diagnostics to inspect.';
+      renderSpeechDiagnostics();
+    };
+    speechEvent('TEST START REQUESTED','No radio audio transmitted');
+    speech.start();
+    renderSpeechDiagnostics();
+  }catch(e){
+    speechTestCapture=null;
+    speechStats.lastError=String(e?.name||'start threw');
+    speechEvent('TEST START FAILED',speechStats.lastError);
+    if(ui.speechTestPreview)ui.speechTestPreview.textContent='Could not start test: '+speechStats.lastError;
+  }
+}
+ui.speechTest?.addEventListener('click',runSpeechTest);
+ui.speechCopyDiagnostics?.addEventListener('click',async()=>{
+  const report=speechDiagnosticReport();
+  try{
+    if(!navigator.clipboard?.writeText)throw Error('No clipboard API');
+    await navigator.clipboard.writeText(report);
+    transcriptStatus('Speech diagnostics copied. Paste them here to troubleshoot.');
+  }catch{window.prompt('Copy speech-to-text diagnostics:',report);}
+});
+renderSpeechDiagnostics();
+
 function transcriptStatus(text){if(ui.transcriptStatus)ui.transcriptStatus.textContent=text;}
 function transcriptStamp(time){return new Date(time).toLocaleTimeString([],{
   hour:'2-digit',minute:'2-digit',second:'2-digit'
@@ -380,7 +526,7 @@ function diagnosticReport(){
       ', voice '+audio+'/'+peers.length+', ICE '+ice;
   });
   const data=usageMeter.snapshot();
-  return ['Relay One V6.5 connection diagnostics',
+  return ['Relay One V6.6 connection diagnostics',
     'Radio mode: '+radioMode,
     'Estimated WebRTC session: sent '+formatDataBytes(data.session.tx)+', received '+formatDataBytes(data.session.rx),
     'Estimated saved: sent '+formatDataBytes(data.saved.tx)+', received '+formatDataBytes(data.saved.rx),
@@ -388,7 +534,7 @@ function diagnosticReport(){
     'Browser online: '+(navigator.onLine===false?'no':'yes/unknown'),
     'Network effective type: '+kind+' (if available; not cellular signal)',
     'Active channels: '+sessions.size,
-    ...current,'','Recent events:',...diagnosticEvents].join('\n');
+    ...current,'','Recent events:',...diagnosticEvents,'','--- Speech to text ---',speechDiagnosticReport()].join('\n');
 }
 if(ui.copyDiagnostics)ui.copyDiagnostics.addEventListener('click',async()=>{
   const report=diagnosticReport();
