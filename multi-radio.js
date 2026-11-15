@@ -32,7 +32,9 @@ const ui = {
   transcriptEnabled:$('transcriptEnabled'),transcriptKeep:$('transcriptKeep'),
   transcriptStatus:$('transcriptStatus'),transcriptLog:$('transcriptLog'),
   transcriptCount:$('transcriptCount'),transcriptCopy:$('transcriptCopy'),
-  transcriptClear:$('transcriptClear')
+  transcriptClear:$('transcriptClear'),transcriptAutoPopup:$('transcriptAutoPopup'),
+  transcriptOpen:$('transcriptOpen'),transcriptPopup:$('transcriptPopup'),
+  transcriptPopupLog:$('transcriptPopupLog'),transcriptClose:$('transcriptClose')
 };
 const PROFILE_KEY='relay-one.profile.v4';
 const MONITOR_KEY='relay-one.monitor.v5';
@@ -43,6 +45,7 @@ const RADIO_SCAN_KEY='relay-one.scan.v6.4', RADIO_HAND_KEY='relay-one.ptt-side.v
 const TRANSCRIPT_ENABLED_KEY='relay-one.transcribe.v6.5';
 const TRANSCRIPT_KEEP_KEY='relay-one.transcript-keep.v6.5';
 const TRANSCRIPT_STORE_KEY='relay-one.transcripts.v6.5';
+const TRANSCRIPT_AUTOPOP_KEY='relay-one.transcript-popup.v6.5';
 const TRANSCRIPT_MAX=120, TRANSCRIPT_TEXT_MAX=400;
 const MAX_ACTIVE=MAX_SELECTED_CHANNELS, PING_EVERY=5000, STALE_AFTER=40000, PENDING_AFTER=10000;
 const storeGet=(key,defaultValue)=>{try{return JSON.parse(localStorage.getItem(key))??defaultValue;}catch{return defaultValue;}};
@@ -169,6 +172,8 @@ transcriptEntries=transcriptEntries.filter(item=>item && typeof item.text==='str
   item.text.length<=TRANSCRIPT_TEXT_MAX && typeof item.channel==='string' &&
   typeof item.name==='string' && ['tx','rx'].includes(item.direction)).slice(-TRANSCRIPT_MAX);
 let speechCapture=null;
+let autoTranscriptPopup=storeGet(TRANSCRIPT_AUTOPOP_KEY,true)!==false;
+let transcriptPopupOpen=false;
 const SpeechEngine=window.SpeechRecognition||window.webkitSpeechRecognition||null;
 function transcriptStatus(text){if(ui.transcriptStatus)ui.transcriptStatus.textContent=text;}
 function transcriptStamp(time){return new Date(time).toLocaleTimeString([],{
@@ -198,6 +203,36 @@ function renderTranscript(){
   if(nearBottom)ui.transcriptLog.scrollTop=ui.transcriptLog.scrollHeight;
   if(ui.transcriptCount)ui.transcriptCount.textContent=transcriptEntries.length+
     (transcriptEntries.length===1?' message':' messages');
+  renderTranscriptPopup();
+}
+function renderTranscriptPopup(){
+  if(!ui.transcriptPopupLog)return;
+  ui.transcriptPopupLog.replaceChildren();
+  if(!transcriptEntries.length){
+    const blank=document.createElement('p');
+    blank.className='transcript-empty';blank.textContent='No transcribed messages yet.';
+    ui.transcriptPopupLog.appendChild(blank);
+  }
+  for(const item of transcriptEntries.slice(-40)){
+    const row=document.createElement('div');
+    row.className='transcript-popup-line '+item.direction;
+    const meta=document.createElement('strong');
+    meta.textContent=(item.direction==='tx'?'You · ':'')+item.name+
+      ' · '+item.channel+' · '+transcriptStamp(item.at);
+    const text=document.createElement('p');text.textContent=item.text;
+    row.append(meta,text);
+    ui.transcriptPopupLog.appendChild(row);
+  }
+  ui.transcriptPopupLog.scrollTop=ui.transcriptPopupLog.scrollHeight;
+}
+function openTranscriptPopup(){
+  transcriptPopupOpen=true;
+  ui.transcriptPopup?.classList.remove('hidden');
+  renderTranscriptPopup();
+}
+function closeTranscriptPopup(){
+  transcriptPopupOpen=false;
+  ui.transcriptPopup?.classList.add('hidden');
 }
 function persistTranscripts(){
   if(transcriptKeep)storeSet(TRANSCRIPT_STORE_KEY,transcriptEntries);
@@ -211,6 +246,7 @@ function appendTranscript(direction,session,name,words){
     text,at:Date.now()});
   if(transcriptEntries.length>TRANSCRIPT_MAX)transcriptEntries=transcriptEntries.slice(-TRANSCRIPT_MAX);
   persistTranscripts();renderTranscript();
+  if(autoTranscriptPopup && !selectedTx)openTranscriptPopup();
   return true;
 }
 function transmitCaption(session,text){
@@ -287,6 +323,12 @@ function setTranscriptEnabled(enabled){
 if(ui.transcriptEnabled)ui.transcriptEnabled.addEventListener('change',()=>{
   setTranscriptEnabled(ui.transcriptEnabled.checked);
 });
+if(ui.transcriptAutoPopup)ui.transcriptAutoPopup.addEventListener('change',()=>{
+  autoTranscriptPopup=ui.transcriptAutoPopup.checked;
+  storeSet(TRANSCRIPT_AUTOPOP_KEY,autoTranscriptPopup);
+});
+ui.transcriptOpen?.addEventListener('click',openTranscriptPopup);
+ui.transcriptClose?.addEventListener('click',closeTranscriptPopup);
 if(ui.transcriptKeep)ui.transcriptKeep.addEventListener('change',()=>{
   transcriptKeep=ui.transcriptKeep.checked;
   storeSet(TRANSCRIPT_KEEP_KEY,transcriptKeep);
@@ -309,6 +351,7 @@ if(ui.transcriptClear)ui.transcriptClear.addEventListener('click',()=>{
   transcriptStatus('Transcript cleared. Voice channels are unchanged.');
 });
 if(ui.transcriptKeep)ui.transcriptKeep.checked=transcriptKeep;
+if(ui.transcriptAutoPopup)ui.transcriptAutoPopup.checked=autoTranscriptPopup;
 setTranscriptEnabled(transcriptEnabled);
 renderTranscript();
 
