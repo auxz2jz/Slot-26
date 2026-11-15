@@ -119,7 +119,7 @@ const environmentNames=[
   'URLSearchParams','setTimeout','clearTimeout','setInterval','clearInterval'
 ];
 const appFactory=new Function(...utilityNames,...environmentNames,source+
-  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,sessions,ui,channels,rows};');
+  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,getTranscripts:()=>transcriptEntries,sessions,ui,channels,rows};');
 const utilsForTest={
   ...utils,...presets,WebRTCUsageMeter,formatDataBytes,
   checkChannelPin:(channel,pin)=>presets.checkChannelPin(channel,pin,webcrypto),
@@ -127,7 +127,7 @@ const utilsForTest={
   guestId:id=>utils.guestId(id,utils.newRoom(webcrypto)),
   deriveProtectedRoomId:(id,pin)=>utils.deriveProtectedRoomId(id,pin,webcrypto)
 };
-function browser(name,rooms){
+function browser(name,rooms,speechSupported=true){
   const els=new Map();
   const document={hidden:false,body:{classList:{toggle(){}}},getElementById(id){if(!els.has(id))els.set(id,new FakeElement());return els.get(id);},
     createElement(tag){return new FakeElement(tag);},addEventListener(){}};
@@ -135,16 +135,27 @@ function browser(name,rooms){
     ['relay-one.profile.v4',JSON.stringify({name,color:utils.PALETTE[0]})],
     ['relay-one.channels.v4',JSON.stringify(rooms)]
   ]);
-  const localStorage={getItem:k=>data.get(k)||null,setItem:(k,v)=>data.set(k,v)};
+  const localStorage={getItem:k=>data.get(k)||null,setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)};
   const navigator={mediaDevices:{getUserMedia:async()=>new FakeStream([track()])},
     clipboard:{writeText:async()=>{}}};
+  const recognitionInstances=[];
+  class FakeRecognition{
+    constructor(){this.started=false;this.stopped=false;recognitionInstances.push(this);}
+    start(){this.started=true;}
+    stop(){this.stopped=true;}
+    fire(text,final=true,index=0){
+      const result=[{transcript:text}];result.isFinal=final;
+      this.onresult?.({resultIndex:index,results:[result]});
+    }
+  }
   const window={isSecureContext:true,Peer,addEventListener(){},
+    SpeechRecognition:speechSupported?FakeRecognition:undefined,
     prompt(){return '1234';},confirm(){return true;}};
   const location={href:'https://example.invalid/Slot-26/',pathname:'/Slot-26/',search:''};
   const app=appFactory(...utilityNames.map(k=>utilsForTest[k]),document,window,navigator,
     localStorage,location,{replaceState(){}},FakeStream,URLSearchParams,
     soon,cancel,repeat,stopRepeat);
-  return {...app,localStorage};
+  return {...app,localStorage,recognitionInstances};
 
 }
 test('V6: overlapping preset channels isolate PTT and monitoring',async()=>{
@@ -336,4 +347,87 @@ test('V6.4: scan ignores muted channels and only presents joined, monitored acti
   assert.equal(listener.getScreenId(),a.id,'muted channel transmission must not pop up');
   assert.equal(listener.getFocusId(),a.id);
   for(const device of [listener,speaker])for(const id of [...device.sessions.keys()])device.leaveChannel(id);
+});
+
+test('V6.5: sender opt-in transcribes PTT without affecting voice or remote monitor, recipient gets RX callsign',async()=>{
+  const channel=presets.CHANNEL_PRESETS[0];
+  const sender=browser('Patrol 1',[]),receiver=browser('Dispatch',[]);
+  await sender.joinChannel(channel);flush();
+  await receiver.joinChannel(channel);flush();
+  for(let i=0;i<3;i++){for(const tick of intervals.values())tick();flush();}
+  assert.equal(sender.getTranscripts().length,0);
+  assert.equal(receiver.getTranscripts().length,0);
+  sender.setTranscriptEnabled(true);
+  const s=sender.sessions.get(channel.id),r=receiver.sessions.get(channel.id);
+  sender.startPTT(s);flush();
+  assert.equal(s.track.enabled,true,'voice transmission remains immediate and independent');
+  assert.equal(sender.recognitionInstances.length,1,'sender speech recognition starts on PTT');
+  assert.equal(receiver.recognitionInstances.length,0,'receivers do not independently recognize incoming speech');
+  const recognition=sender.recognitionInstances[0];
+  assert.ok(recognition.started);
+  recognition.fire('  North entrance clear.  ');
+  flush();
+  assert.equal(sender.getTranscripts().length,1);
+  assert.equal(receiver.getTranscripts().length,1);
+  assert.deepEqual(sender.getTranscripts().map(x=>[x.direction,x.name,x.channel,x.text]),
+    [['tx','Patrol 1','Channel 01','North entrance clear.']]);
+  assert.deepEqual(receiver.getTranscripts().map(x=>[x.direction,x.name,x.channel,x.text]),
+    [['rx','Patrol 1','Channel 01','North entrance clear.']]);
+  assert.ok(receiver.ui.transcriptLog.children.length>0,'scrollable conversation receives bubbles');
+  assert.equal(r.track.enabled,false,'listening phone never transmits');
+  assert.equal(sender.getTranscripts()[0].text,'North entrance clear.');
+  sender.releaseTalk(s);flush();
+  assert.equal(s.track.enabled,false);
+  assert.equal(recognition.stopped,true);
+  recognition.fire('Second sentence after release',true,1);
+  flush();
+  assert.equal(sender.getTranscripts().length,2,'late final transcript should still be appended');
+  assert.equal(receiver.getTranscripts().length,2);
+  for(const device of [sender,receiver])for(const id of [...device.sessions.keys()])device.leaveChannel(id);
+});
+test('V6.5: transcript ignores interim duplicates and muted channels; persistence is opt-in',async()=>{
+  const c=presets.CHANNEL_PRESETS[1];
+  const a=browser('Patrol A',[]),b=browser('Patrol B',[]);
+  await a.joinChannel(c);flush();
+  await b.joinChannel(c);flush();
+  for(let i=0;i<2;i++){for(const tick of intervals.values())tick();flush();}
+  a.setTranscriptEnabled(true);
+  a.startPTT(a.sessions.get(c.id));flush();
+  const speech=a.recognitionInstances[0];
+  speech.fire('incomplete...',false);flush();
+  assert.equal(a.getTranscripts().length,0);
+  speech.fire('Channel is clear.',true);flush();
+  speech.fire('Channel is clear.',true);flush();
+  assert.equal(a.getTranscripts().length,1,'one final recognition index generates one caption');
+  assert.equal(b.getTranscripts().length,1);
+  assert.equal(a.localStorage.getItem('relay-one.transcripts.v6.5'),null,'no persistent log by default');
+  assert.equal(a.ui.transcriptKeep.checked,false);
+  a.ui.transcriptKeep.checked=true;
+  a.ui.transcriptKeep.listeners.change[0]();
+  assert.equal(JSON.parse(a.localStorage.getItem('relay-one.transcripts.v6.5')).length,1);
+  b.setMonitor(c.id,false);
+  a.releaseTalk(a.sessions.get(c.id));
+  a.startPTT(a.sessions.get(c.id));flush();
+  a.recognitionInstances[1].fire('This is muted for B.');flush();
+  assert.equal(b.getTranscripts().length,1,'muted channel ignores text as well as voice');
+  a.releaseTalk(a.sessions.get(c.id));
+  a.ui.transcriptKeep.checked=false;a.ui.transcriptKeep.listeners.change[0]();
+  assert.equal(a.localStorage.getItem('relay-one.transcripts.v6.5'),null);
+  a.ui.transcriptClear.listeners.click[0]();
+  assert.equal(a.getTranscripts().length,0);
+  for(const device of [a,b])for(const id of [...device.sessions.keys()])device.leaveChannel(id);
+});
+test('V6.5: speech recognition missing does not disable the PTT microphone',async()=>{
+  const c=presets.CHANNEL_PRESETS[0];
+  const a=browser('Unsupported phone',[],false);
+  await a.joinChannel(c);flush();
+  a.setTranscriptEnabled(true);
+  assert.match(a.ui.transcriptStatus.textContent,/unavailable/);
+  const s=a.sessions.get(c.id);
+  a.startPTT(s);flush();
+  assert.equal(s.track.enabled,true,'voice must work normally even when speech APIs are unavailable');
+  assert.equal(a.recognitionInstances.length,0);
+  a.releaseTalk(s);flush();
+  assert.equal(s.track.enabled,false);
+  a.leaveChannel(c.id);
 });
