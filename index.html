@@ -115,10 +115,10 @@
       <p class="small muted">This checks speech-recognition support and microphone events. Diagnostic logs exclude spoken words, PINs, and audio.</p>
       <p id="speechDiagSummary" class="small">Waiting for diagnostic data.</p>
       <div class="speech-diag-actions">
-        <button type="button" id="speechTest" class="secondary">Test speech recognition</button>
+        <button type="button" id="speechTest" class="secondary">Test browser speech (legacy)</button>
         <button type="button" id="speechCopyDiagnostics" class="secondary">Copy speech diagnostics</button>
       </div>
-      <p class="small muted">Test mode listens for a short phrase on this device only. Tap again to stop. It does not transmit or add text to the radio conversation.</p>
+      <p class="small muted">This diagnostic tests the legacy browser speech recognizer independently. On-device Whisper is tested by loading the model and using PTT on a joined channel. Neither diagnostic uploads your radio recording.</p>
       <p class="small" id="speechTestPreview" role="status" aria-live="polite">Test not started.</p>
       <pre id="speechDiagnosticLog" class="diag-log" aria-label="Speech recognition diagnostic events">No recognition attempts yet.</pre>
     </details>
