@@ -119,7 +119,7 @@ const environmentNames=[
   'URLSearchParams','setTimeout','clearTimeout','setInterval','clearInterval'
 ];
 const appFactory=new Function(...utilityNames,...environmentNames,source+
-  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
+  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,setTranscriptMode,loadLocalAsr,getAsrState:()=>asrState,getAsrStats:()=>asrStats,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
 const utilsForTest={
   ...utils,...presets,WebRTCUsageMeter,formatDataBytes,
   checkChannelPin:(channel,pin)=>presets.checkChannelPin(channel,pin,webcrypto),
@@ -358,7 +358,7 @@ test('V6.5: sender opt-in transcribes PTT without affecting voice or remote moni
   for(let i=0;i<3;i++){for(const tick of intervals.values())tick();flush();}
   assert.equal(sender.getTranscripts().length,0);
   assert.equal(receiver.getTranscripts().length,0);
-  sender.setTranscriptEnabled(true);
+  sender.setTranscriptMode('browser');sender.setTranscriptEnabled(true);
   const s=sender.sessions.get(channel.id),r=receiver.sessions.get(channel.id);
   sender.startPTT(s);flush();
   assert.equal(s.track.enabled,true,'voice transmission remains immediate and independent');
@@ -400,7 +400,7 @@ test('V6.5: transcript ignores interim duplicates and muted channels; persistenc
   await a.joinChannel(c);flush();
   await b.joinChannel(c);flush();
   for(let i=0;i<2;i++){for(const tick of intervals.values())tick();flush();}
-  a.setTranscriptEnabled(true);
+  a.setTranscriptMode('browser');a.setTranscriptEnabled(true);
   a.startPTT(a.sessions.get(c.id));flush();
   const speech=a.recognitionInstances[0];
   speech.fire('incomplete...',false);flush();
@@ -430,7 +430,7 @@ test('V6.5: speech recognition missing does not disable the PTT microphone',asyn
   const c=presets.CHANNEL_PRESETS[0];
   const a=browser('Unsupported phone',[],false);
   await a.joinChannel(c);flush();
-  a.setTranscriptEnabled(true);
+  a.setTranscriptMode('browser');a.setTranscriptEnabled(true);
   assert.match(a.ui.transcriptStatus.textContent,/unavailable/);
   const s=a.sessions.get(c.id);
   a.startPTT(s);flush();
@@ -447,7 +447,7 @@ test('V6.5: auto-popup preference can be disabled while transcript continues col
   await tx.joinChannel(c);flush();
   await rx.joinChannel(c);flush();
   for(let i=0;i<2;i++){for(const tick of intervals.values())tick();flush();}
-  tx.setTranscriptEnabled(true);
+  tx.setTranscriptMode('browser');tx.setTranscriptEnabled(true);
   rx.ui.transcriptAutoPopup.checked=false;
   rx.ui.transcriptAutoPopup.listeners.change[0]();
   tx.startPTT(tx.sessions.get(c.id));flush();
@@ -464,7 +464,7 @@ test('V6.6: speech diagnostics show browser capabilities and individual recognit
   const a=browser('Testing speech',[]);
   const ch=presets.CHANNEL_PRESETS[0];
   await a.joinChannel(ch);flush();
-  a.setTranscriptEnabled(true);
+  a.setTranscriptMode('browser');a.setTranscriptEnabled(true);
   const session=a.sessions.get(ch.id);
   a.startPTT(session);flush();
   assert.equal(session.track.enabled,true);
@@ -513,7 +513,7 @@ test('V6.6: speech errors persist after recognition ends and do not silence voic
   const a=browser('Permission test',[]);
   const ch=presets.CHANNEL_PRESETS[0];
   await a.joinChannel(ch);flush();
-  a.setTranscriptEnabled(true);
+  a.setTranscriptMode('browser');a.setTranscriptEnabled(true);
   const session=a.sessions.get(ch.id);
   a.startPTT(session);flush();
   const recognition=a.recognitionInstances[0];
