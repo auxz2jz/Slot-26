@@ -256,3 +256,12 @@ body.radio-compact .group-people,body.radio-compact .group-msg{display:none}
 #speechDiagSummary{font-size:12px;color:#b8e6da}
 .speech-diagnostics .diag-log{max-height:210px;margin-top:11px}
 @media(max-width:355px){.speech-diag-actions{grid-template-columns:1fr}}
+
+/* V6.7 opt-in shared-microphone Whisper controls. */
+.local-asr-controls{margin:10px 0 12px;padding:12px;border:1px solid #36596a;background:#0c2533;border-radius:11px;display:flex;flex-direction:column;gap:8px}
+.local-asr-controls label{font-size:12px;font-weight:800;color:#c9e9e7}
+.local-asr-controls select{width:100%;min-height:43px;border-radius:8px;font-size:13px;padding:9px;background:#173447;color:#f2f9f8;border:1px solid #4b7380}
+.local-asr-controls button{min-height:44px;font-size:13px;white-space:normal;padding:10px}
+.local-asr-controls button:disabled{opacity:.65}
+.local-asr-controls p{margin:0;font-size:11px;line-height:1.5}
+#asrState{color:#a6eed2}
