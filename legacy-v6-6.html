@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#081824">
+<meta name="description" content="Relay One handheld-style push-to-talk with Basic/Advanced channels, visual scan, and instant radio activity display.">
+<title>Relay One — Shared Radio Channels</title>
+<link rel="stylesheet" href="./styles.css?v=4.1.0">
+<link rel="stylesheet" href="./legacy-v6-6.css">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
+<script type="module" src="./legacy-v6-6.js"></script>
+</head>
+<body>
+<main class="app multi-app">
+  <header class="masthead">
+    <div class="brand-mark" aria-hidden="true">◉</div>
+    <div><p class="eyebrow">RELAY ONE / RADIO V6.6</p><h1>Field radio</h1></div>
+    <span id="channelModeBadge" class="version">2 channels</span>
+  </header>
+
+  <section class="card handheld-radio" aria-label="Handheld radio controls">
+    <div class="handheld-topline">
+      <span class="micro-label">RELAY ONE / HANDHELD</span>
+      <div class="radio-top-actions"><span class="radio-scan-led" id="scanIndicator">SCAN OFF</span><button id="transcriptOpen" type="button" class="secondary radio-text-button" aria-label="Open radio text popup">Text</button></div>
+    </div>
+    <div class="radio-housing" id="radioHousing">
+      <div class="radio-side-ptt">
+        <span class="micro-label">PUSH TO TALK</span>
+        <button id="quickTalk" class="talk-button handheld-ptt" type="button" disabled aria-label="Hold to talk on selected joined channel">
+          <svg viewBox="0 0 48 48" width="38" height="38" fill="none" aria-hidden="true"><rect x="18" y="5" width="12" height="26" rx="6" stroke="currentColor" stroke-width="3"/><path d="M11 23a13 13 0 0 0 26 0M24 36v7M16 43h16" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+          <span id="quickText">HOLD TO TALK</span>
+        </button>
+        <strong class="radio-ptt-target" id="radioPttTarget">PTT: NOT JOINED</strong>
+      </div>
+      <div class="radio-center-console">
+        <div class="radio-lcd" id="radioScreen" role="region" tabindex="0" aria-label="Selected radio channel. Swipe left or right to change channels.">
+          <div class="radio-lcd-top"><span id="screenMode">BASIC</span><span id="screenSignal">STANDBY</span><span id="screenScan">MANUAL</span></div>
+          <div class="radio-lcd-channel"><span id="screenChannelNumber">CH 01</span><span class="radio-lcd-icon" id="screenLock" aria-label="Open channel">○</span></div>
+          <strong id="screenChannelTitle">Channel 01</strong>
+          <span id="focusTitle" class="radio-lcd-caption">Channel 01</span>
+          <div class="radio-lcd-line"><span id="focusStatus" class="status-badge">Not joined</span><span id="screenPeople">—</span></div>
+          <div class="radio-lcd-onair"><span class="micro-label">ON THE AIR</span><strong id="focusSpeaker">Channel idle</strong></div>
+        </div>
+        <div class="radio-navigation" role="group" aria-label="Select channel or site">
+          <button id="prevChannel" class="secondary" type="button" aria-label="Previous channel">◀ <span>CH −</span></button>
+          <button id="radioJoin" class="secondary" type="button">JOIN</button>
+          <button id="nextChannel" class="secondary" type="button" aria-label="Next channel"><span>CH +</span> ▶</button>
+        </div>
+        <div class="radio-secondary-actions" role="group" aria-label="Selected channel actions">
+          <button id="radioMonitor" type="button" class="secondary" aria-pressed="false">Monitor</button>
+          <button id="radioCall" type="button" class="secondary">Call</button>
+          <button id="radioScan" type="button" class="secondary" aria-pressed="false">Scan off</button>
+        </div>
+      </div>
+    </div>
+    <div class="radio-preferences">
+      <div class="handedness-picker" role="group" aria-label="Push-to-talk button side">
+        <span class="micro-label">PTT SIDE</span>
+        <button id="leftHanded" type="button" class="secondary" aria-pressed="false">Left</button>
+        <button id="rightHanded" type="button" class="secondary" aria-pressed="true">Right</button>
+      </div>
+      <p id="focusHint" class="small muted">Select a channel, tap Join, then hold Talk to transmit. Scan previews joined channels and pops up active transmissions.</p>
+    </div>
+    <div class="radio-mode-picker" role="group" aria-label="Radio mode">
+      <div class="radio-mode-heading"><span class="micro-label">RADIO MODE</span><span class="small muted">Saved on this device</span></div>
+      <div class="radio-mode-buttons">
+        <button id="basicMode" type="button" class="secondary" aria-pressed="true"><strong>Basic</strong><span>Channels 01–02</span></button>
+        <button id="advancedMode" type="button" class="secondary" aria-pressed="false"><strong>Advanced</strong><span>All 10 channels</span></button>
+      </div>
+    </div>
+    <p id="radioModeHelp" class="small muted">Basic shows Channels 01–02. Advanced shows all ten. Mode changes only this device's display and connections.</p>
+    <p id="radioScreenMessage" class="small muted" role="status" aria-live="polite">Ready to join a channel.</p>
+  </section>
+
+  <section class="card radio-transcripts" aria-label="Radio voice transcripts">
+    <div class="section-heading">
+      <div><span class="micro-label">VOICE TO TEXT</span><h2>Radio conversation</h2></div>
+      <span id="transcriptCount" class="secondary-text">0 messages</span>
+    </div>
+    <div class="transcript-settings">
+      <label class="setting-toggle">
+        <input id="transcriptEnabled" type="checkbox">
+        Transcribe my PTT speech
+      </label>
+      <label class="setting-toggle">
+        <input id="transcriptKeep" type="checkbox">
+        Keep transcript on this device
+      </label>
+      <label class="setting-toggle">
+        <input id="transcriptAutoPopup" type="checkbox" checked>
+        Pop up new messages
+      </label>
+    </div>
+    <p id="transcriptStatus" class="small muted" role="status" aria-live="polite">Turn on transcription to caption your transmitted speech. Received captions appear when other users transcribe.</p>
+    <div class="transcript-log" id="transcriptLog" role="log" aria-label="Scrollable radio conversation history" aria-live="polite" aria-relevant="additions text">
+      <p class="transcript-empty">No transcribed radio messages yet.</p>
+    </div>
+    <div class="transcript-toolbar">
+      <button id="transcriptCopy" type="button" class="secondary">Copy transcript</button>
+      <button id="transcriptClear" type="button" class="secondary">Clear conversation</button>
+    </div>
+    <details class="speech-diagnostics" id="speechDiagnosticsPanel">
+      <summary><strong>Speech-to-text diagnostics</strong> <span id="speechDiagBadge" class="secondary-text">Checking browser…</span></summary>
+      <p class="small muted">This checks speech-recognition support and microphone events. Diagnostic logs exclude spoken words, PINs, and audio.</p>
+      <p id="speechDiagSummary" class="small">Waiting for diagnostic data.</p>
+      <div class="speech-diag-actions">
+        <button type="button" id="speechTest" class="secondary">Test speech recognition</button>
+        <button type="button" id="speechCopyDiagnostics" class="secondary">Copy speech diagnostics</button>
+      </div>
+      <p class="small muted">Test mode listens for a short phrase on this device only. Tap again to stop. It does not transmit or add text to the radio conversation.</p>
+      <p class="small" id="speechTestPreview" role="status" aria-live="polite">Test not started.</p>
+      <pre id="speechDiagnosticLog" class="diag-log" aria-label="Speech recognition diagnostic events">No recognition attempts yet.</pre>
+    </details>
+    <p class="small muted transcript-notice">Speech recognition is experimental and may use your browser provider's online speech service. It may fail on some phones. It never replaces the live PTT audio. Transcripts can contain recognition errors; saving is optional and local to this browser.</p>
+  </section>
+
+  <details class="card radio-profile" aria-label="Radio profile settings">
+    <summary class="section-heading radio-manager-summary">
+      <div><span class="micro-label">MY RADIO</span><h2>Profile &amp; sounds</h2></div>
+      <span class="secondary-text">Saved on this device</span>
+    </summary>
+    <label for="displayName">Name / callsign</label>
+    <input id="displayName" type="text" maxlength="30" autocomplete="nickname" placeholder="Patrol 1">
+    <label for="colors">Display color</label>
+    <div id="colors" class="colors" role="group" aria-label="Choose your color"></div>
+    <div class="settings-grid">
+      <label class="setting-toggle"><input id="txTone" type="checkbox"> Squawk before I transmit</label>
+      <label class="setting-toggle"><input id="rxTone" type="checkbox"> Hear incoming squawks</label>
+      <label class="setting-toggle"><input id="alertTone" type="checkbox"> Hear channel call alerts</label>
+    </div>
+  </details>
+
+  <section class="card data-usage-panel" aria-label="Radio data usage">
+    <div class="section-heading">
+      <div><span class="micro-label">DEVELOPMENT METER</span><h2>Estimated radio data</h2></div>
+      <span class="secondary-text" id="dataCurrentRate">0 kbps</span>
+    </div>
+    <div class="data-usage-grid">
+      <div class="data-usage-cell">
+        <span class="micro-label">THIS SESSION</span>
+        <strong id="dataSessionTotal" class="data-amount">0 B</strong>
+        <span id="dataSessionBreakdown" class="small muted">↑ 0 B · ↓ 0 B</span>
+      </div>
+      <div class="data-usage-cell">
+        <span class="micro-label">SAVED ON THIS DEVICE</span>
+        <strong id="dataSavedTotal" class="data-amount">0 B</strong>
+        <span id="dataSavedBreakdown" class="small muted">↑ 0 B · ↓ 0 B</span>
+      </div>
+    </div>
+    <div class="data-meter-bottom">
+      <span class="small muted">WebRTC estimate only; not Verizon billing data. Saved per browser.</span>
+      <button id="resetDataSaved" class="secondary compact" type="button">Reset saved</button>
+    </div>
+  </section>
+
+  <details class="card channel-overview" id="channelManager" aria-label="Channel manager">
+    <summary class="section-heading radio-manager-summary">
+      <div><span class="micro-label">CHANNEL MANAGER</span><h2>Joined channels &amp; settings</h2></div>
+      <strong id="joinCount" class="counter">0 / 2 joined</strong>
+    </summary>
+    <div class="layout-switcher" role="group" aria-label="Channel display density">
+      <span class="micro-label">CHANNEL LAYOUT</span>
+      <div class="layout-switch-buttons">
+        <button id="compactLayout" type="button" aria-pressed="true" class="secondary">Compact</button>
+        <button id="detailedLayout" type="button" aria-pressed="false" class="secondary">Detailed</button>
+      </div>
+    </div>
+    <div class="multi-toolbar">
+      <button class="secondary" id="restoreChannels" type="button">Restore selected</button>
+      <button class="secondary" id="monitorAll" type="button">Monitor joined</button>
+      <button class="secondary" id="muteAll" type="button">Mute joined</button>
+      <button class="secondary" id="enableSpeakers" type="button">Enable speakers</button>
+    </div>
+    <p id="channelMessage" class="small muted" aria-live="polite">Join up to two channels at once. Each talk button transmits only to its own channel.</p>
+    <div id="channelList" class="multi-channel-list"></div>
+  </details>
+
+  <details class="card radio-diag" id="diagnosticsPanel">
+    <summary><strong>Connection diagnostics</strong> <span class="secondary-text">For troubleshooting multi-channel audio</span></summary>
+    <p class="small muted">See whether a channel loses signaling, media, or internet connectivity. This log is kept in memory only and does not include PINs or conversation audio. Android's actual 5G signal strength is not available to a webpage.</p>
+    <div class="multi-toolbar">
+      <button class="secondary" id="copyDiagnostics" type="button">Copy diagnostic log</button>
+      <button class="secondary" id="clearDiagnostics" type="button">Clear log</button>
+    </div>
+    <pre id="diagnosticLog" class="diag-log" aria-live="polite">Connection events will appear here.</pre>
+  </details>
+
+  <section class="card warning">
+    <span class="micro-label">DEMO RADIO • NOT AUTHENTICATED WORK COMMUNICATIONS</span>
+    <p id="errorMessage" class="error hidden" role="alert"></p>
+    <p class="small muted">Only channels you've joined receive audio, participant names, calls, and on-air activity. Monitoring a channel requires joining it. Basic/Advanced is not an access restriction. Channels 06–10 have only browser-side PIN checks, which can be bypassed; a real employee system requires login and server-enforced permissions.</p>
+    <div class="backup-links">
+      <a href="./legacy-v6-5.html">Previous version (V6.5)</a>
+      <a href="./legacy-v6-4.html">Earlier version (V6.4)</a>
+      <a href="./legacy-v6-3.html">Older version (V6.3)</a>
+      <a href="./legacy-v6-2.html">Older version (V6.2)</a>
+      <a href="./legacy-v6-1.html">Earlier layout (V6.1)</a>
+      <a href="./legacy-v5.html">Older custom-channel version</a>
+      <a href="./legacy-v4-1.html">Earlier single-channel version</a>
+    </div>
+  </section>
+
+  <footer>Encrypted WebRTC voice • Per-channel talk and monitoring • Working prototype</footer>
+</main>
+<aside id="transcriptPopup" class="transcript-popup hidden" role="region" aria-label="Radio text popup">
+  <div class="transcript-popup-head">
+    <strong>Radio text</strong>
+    <button id="transcriptClose" type="button" class="secondary">Hide</button>
+  </div>
+  <div id="transcriptPopupLog" class="transcript-popup-messages" role="log" aria-live="polite">
+    <p class="transcript-empty">No radio messages yet.</p>
+  </div>
+</aside>
+<div id="remoteAudio" aria-hidden="true"></div>
+</body>
+</html>
