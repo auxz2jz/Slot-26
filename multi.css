@@ -242,3 +242,17 @@ body.radio-compact .group-people,body.radio-compact .group-msg{display:none}
  .transcript-popup-messages{max-height:180px}
  .radio-text-button{padding:6px 9px!important}
 }
+
+/* V6.6 speech-specific diagnostics and local recognizer test. */
+.speech-diagnostics{margin-top:14px;padding:12px;border:1px solid #355666;border-radius:10px;background:#0b2331}
+.speech-diagnostics summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none}
+.speech-diagnostics summary::-webkit-details-marker{display:none}
+.speech-diagnostics summary strong{font-size:13px}
+.speech-diagnostics summary .secondary-text{font-size:11px;text-align:right}
+.speech-diagnostics>p{margin:10px 0;line-height:1.5}
+.speech-diag-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.speech-diag-actions button{padding:10px 7px;min-height:44px;font-size:12px;white-space:normal}
+#speechTestPreview{border-left:3px solid #537d88;padding:7px 10px;background:#102d3b;overflow-wrap:anywhere}
+#speechDiagSummary{font-size:12px;color:#b8e6da}
+.speech-diagnostics .diag-log{max-height:210px;margin-top:11px}
+@media(max-width:355px){.speech-diag-actions{grid-template-columns:1fr}}
