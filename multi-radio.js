@@ -20,13 +20,22 @@ const ui = {
   dataCurrentRate:$('dataCurrentRate'),resetDataSaved:$('resetDataSaved'),
   compactLayout:$('compactLayout'),detailedLayout:$('detailedLayout'),
   basicMode:$('basicMode'),advancedMode:$('advancedMode'),
-  radioModeHelp:$('radioModeHelp'),channelModeBadge:$('channelModeBadge')
+  radioModeHelp:$('radioModeHelp'),channelModeBadge:$('channelModeBadge'),
+  radioHousing:$('radioHousing'),radioScreen:$('radioScreen'),
+  screenChannelNumber:$('screenChannelNumber'),screenChannelTitle:$('screenChannelTitle'),
+  screenSignal:$('screenSignal'),screenMode:$('screenMode'),screenScan:$('screenScan'),
+  screenLock:$('screenLock'),screenPeople:$('screenPeople'),scanIndicator:$('scanIndicator'),
+  radioPttTarget:$('radioPttTarget'),radioScreenMessage:$('radioScreenMessage'),
+  prevChannel:$('prevChannel'),nextChannel:$('nextChannel'),
+  radioJoin:$('radioJoin'),radioMonitor:$('radioMonitor'),radioCall:$('radioCall'),
+  radioScan:$('radioScan'),leftHanded:$('leftHanded'),rightHanded:$('rightHanded')
 };
 const PROFILE_KEY='relay-one.profile.v4';
 const MONITOR_KEY='relay-one.monitor.v5';
 const ACTIVE_KEY='relay-one.joined.v5';
 const LAYOUT_KEY='relay-one.layout.v6.2';
 const RADIO_MODE_KEY='relay-one.radio-mode.v6.3';
+const RADIO_SCAN_KEY='relay-one.scan.v6.4', RADIO_HAND_KEY='relay-one.ptt-side.v6.4';
 const MAX_ACTIVE=MAX_SELECTED_CHANNELS, PING_EVERY=5000, STALE_AFTER=40000, PENDING_AFTER=10000;
 const storeGet=(key,defaultValue)=>{try{return JSON.parse(localStorage.getItem(key))??defaultValue;}catch{return defaultValue;}};
 const storeSet=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{}};
@@ -72,7 +81,11 @@ function switchMode(nextMode){
     if(selectionChanged)persistDesired();
     if(focusedId && !modeAllows(storedRoom(focusedId)))focusedId=sessions.keys().next().value||null;
   }
-  renderMode();updateAll();
+  renderMode();
+  if(!modeAllows(storedRoom(viewId)))viewId=channels[0].id;
+  scanPreviewId=null;scanActivityId=null;
+  scanTick();
+  updateAll();
   setMessage(nextMode==='basic'
     ?'Basic mode: Channels 01–02. '+(disconnected
       ?'Disconnected '+disconnected+' other channel(s); switch to Advanced to rejoin.'
@@ -125,6 +138,12 @@ ui.resetDataSaved?.addEventListener('click',()=>{
 renderDataUsage();
 setInterval(()=>{void sampleDataUsage();},4000);
 let focusedId=null, selectedTx=null, microphone=null, micPromise=null, alertContext=null;
+// The center LCD may sweep through joined channels; PTT always has a fixed, visible target.
+let viewId=channels[0].id;
+let scanPreviewId=null, scanActivityId=null, scanLastOnAirAt=0, scanStepAt=0;
+let scanEnabled=storeGet(RADIO_SCAN_KEY,false)===true;
+let pttSide=storeGet(RADIO_HAND_KEY,'right')==='left'?'left':'right';
+const SCAN_STEP_MS=1400,SCAN_HOLD_MS=2400;
 let joinInProgress=0;
 const diagnosticEvents=[];
 const DIAGNOSTIC_LIMIT=150;
@@ -201,14 +220,17 @@ function persistDesired(){storeSet(ACTIVE_KEY,[...desiredJoined]);}
 function persistMonitors(){storeSet(MONITOR_KEY,monitorPrefs);}
 function reportError(message){ui.error.textContent=message;ui.error.classList.remove('hidden');logRadio('ERROR','',message);}
 function clearError(){ui.error.textContent='';ui.error.classList.add('hidden');}
-function setMessage(text){ui.message.textContent=text;}
+function setMessage(text){
+  ui.message.textContent=text;
+  if(ui.radioScreenMessage)ui.radioScreenMessage.textContent=text;
+}
 function storedRoom(id){return channels.find(c=>c.id===id);}
 function getProfile(){profile.name=cleanName(ui.name.value);ui.name.value=profile.name;storeSet(PROFILE_KEY,profile);}
 function monitorValue(id){return monitorPrefs[id]!==false;}
 function setMonitor(id,enabled){
   monitorPrefs[id]=!!enabled;persistMonitors();
   sessions.get(id)?.setMonitor(enabled);
-  updateRow(id);updateQuick();
+  scanTick();updateRow(id);updateQuick();
 }
 function storeProfile(){storeSet(PROFILE_KEY,profile);}
 function drawColors(){
@@ -288,7 +310,7 @@ async function joinChannel(c){
     const session=new ChannelSession(c,roomId,track,stream,monitorValue(c.id));
     sessions.set(c.id,session);
     desiredJoined.add(c.id);persistDesired();
-    if(!focusedId)focusedId=c.id;
+    if(!sessions.has(focusedId))focusedId=c.id;
     session.start();
     logRadio('CHANNEL JOIN',c.title,'New microphone track; independent WebRTC room');
     setMessage('Joined '+c.title+'. Keep this page open while using the radio.');
@@ -301,8 +323,10 @@ function leaveChannel(id){
   if(!s)return;
   if(selectedTx===s)releaseTalk(s);
   logRadio('CHANNEL LEAVE',s.room.title);s.stop();sessions.delete(id);desiredJoined.delete(id);persistDesired();
-  if(focusedId===id)focusedId=sessions.keys().next().value||null;
-  releaseMicrophoneIfUnused();updateAll();
+  if(focusedId===id)focusedId=viewId===id?null:(sessions.keys().next().value||null);
+  if(scanPreviewId===id)scanPreviewId=null;
+  if(scanActivityId===id)scanActivityId=null;
+  releaseMicrophoneIfUnused();scanTick();updateAll();
 }
 async function restoreJoined(){
   const ids=[...desiredJoined].filter(id=>modeAllows(storedRoom(id))).slice(0,maxActiveChannels());
@@ -438,6 +462,7 @@ class ChannelSession{
       }else this.transmitIfAllowed(change);
     }
     if(this.isHost)this.broadcast({type:'floor',id,tone:!!tone});
+    if(scanEnabled && id && id!==this.myId && this.monitor)scanTick();
     updateRow(this.publicId);updateQuick();
   }
   dropMedia(m){
@@ -806,7 +831,7 @@ function drawRows(){
       }
       updateRow(c.id);updateQuick();
     });
-    focus.addEventListener('click',()=>{if(sessions.has(c.id)){focusedId=c.id;updateAll();}});
+    focus.addEventListener('click',()=>{if(sessions.has(c.id)){viewId=c.id;focusedId=c.id;scanPreviewId=null;scanActivityId=null;updateAll();}});
     bindHold(ptt,()=>sessions.get(c.id));
     monitor.addEventListener('change',()=>{
       if(!sessions.has(c.id)){monitor.checked=false;return;}
@@ -864,16 +889,170 @@ function updateRow(id){
   if(focus)updateQuick();
   ui.count.textContent=sessions.size+' / '+maxActiveChannels()+' joined';
 }
-function updateQuick(){
-  const s=sessions.get(focusedId);
-  if(!s || !modeAllows(s.room)){ui.focusTitle.textContent='No channel selected';ui.focusStatus.textContent='Standby';ui.focusSpeaker.textContent='Channel idle';ui.quick.disabled=true;ui.quickText.textContent='HOLD TO TALK';ui.focusHint.textContent='Join a channel, then tap Focus beside it to use this large Talk button.';return;}
-  ui.focusTitle.textContent=s.room.title;
-  ui.focusStatus.textContent=s.ready()?'Connected':'Connecting';
-  ui.focusStatus.className='status-badge'+(s.ready()?' connected':'');
-  ui.focusSpeaker.textContent=s.floor?s.info(s.floor).name:'Channel idle';
-  ui.quick.disabled=!s.ready()||(selectedTx && selectedTx!==s)||(s.floor && s.floor!==s.myId);
-  ui.quickText.textContent=s.transmitting?'TRANSMITTING':s.wantTalk?'REQUESTING…':'HOLD TO TALK';
-  ui.focusHint.textContent='Only '+s.room.title+' receives this microphone when you hold Talk.';
+// Handheld radio UI: the scanner animates the LCD only. It never reconnects,
+// renegotiates audio, changes monitor preferences or changes existing voice streams.
+const availableChannels=()=>channels.filter(modeAllows);
+const joinedMonitored=()=>[...sessions.values()].filter(v=>modeAllows(v.room)&&v.monitor);
+const scanDisplayId=()=>{
+  if(selectedTx)return selectedTx.publicId;
+  if(scanEnabled && scanActivityId && Date.now()-scanLastOnAirAt<SCAN_HOLD_MS && sessions.has(scanActivityId))return scanActivityId;
+  if(scanEnabled && scanPreviewId && sessions.has(scanPreviewId) && sessions.get(scanPreviewId)?.monitor)return scanPreviewId;
+  return viewId;
+};
+function scanTick(now=Date.now()){
+  if(!scanEnabled){
+    scanActivityId=null;scanPreviewId=null;
+    renderRadioDisplay();return;
+  }
+  if(selectedTx){renderRadioDisplay();return;}
+  const connected=joinedMonitored();
+  const live=connected.filter(v=>v.floor && v.floor!==v.myId)
+    .sort((a,b)=>b.floorAt-a.floorAt)[0];
+  if(live){
+    if(scanActivityId!==live.publicId){
+      scanActivityId=live.publicId;viewId=live.publicId;focusedId=live.publicId;
+      scanPreviewId=live.publicId;
+      logRadio('SCAN ACTIVE',live.room.title,'Incoming monitored transmission displayed');
+    }
+    scanLastOnAirAt=now;
+    renderRadioDisplay();return;
+  }
+  if(scanActivityId && now-scanLastOnAirAt<SCAN_HOLD_MS){
+    renderRadioDisplay();return;
+  }
+  scanActivityId=null;
+  if(!connected.length){scanPreviewId=null;renderRadioDisplay();return;}
+  if(!connected.some(v=>v.publicId===scanPreviewId)){
+    scanPreviewId=connected[0].publicId;scanStepAt=now;
+  }else if(connected.length>1 && now-scanStepAt>=SCAN_STEP_MS){
+    const index=connected.findIndex(v=>v.publicId===scanPreviewId);
+    scanPreviewId=connected[(index+1)%connected.length].publicId;scanStepAt=now;
+  }
+  renderRadioDisplay();
 }
+function setScan(enabled){
+  scanEnabled=Boolean(enabled);storeSet(RADIO_SCAN_KEY,scanEnabled);
+  scanPreviewId=null;scanActivityId=null;scanLastOnAirAt=0;scanStepAt=0;
+  scanTick();
+  setMessage(scanEnabled
+    ?'Scan on: continuously listening to all joined, monitored channels; the display previews them and highlights incoming transmissions.'
+    :'Scan off: showing your manually selected channel.');
+  logRadio('SCAN MODE','',scanEnabled?'on':'off');
+}
+function setPttSide(side){
+  if(side!=='left'&&side!=='right')return;
+  pttSide=side;storeSet(RADIO_HAND_KEY,side);
+  ui.radioHousing?.classList.toggle('left-handed',side==='left');
+  ui.leftHanded?.setAttribute('aria-pressed',String(side==='left'));
+  ui.rightHanded?.setAttribute('aria-pressed',String(side==='right'));
+}
+function browseChannel(direction){
+  if(selectedTx)return; // Cannot retarget the radio while PTT is held.
+  const options=availableChannels();
+  const current=options.findIndex(c=>c.id===viewId);
+  viewId=options[(current<0?0:current+direction+options.length)%options.length].id;
+  focusedId=viewId;scanActivityId=null;scanPreviewId=null;scanStepAt=Date.now();
+  updateAll();
+}
+function displayChannelId(){return scanDisplayId();}
+function renderRadioDisplay(){
+  const id=scanDisplayId();
+  const c=storedRoom(id)||availableChannels()[0];
+  const s=c?sessions.get(c.id):null;
+  const target=sessions.get(focusedId);
+  const isActive=s && s.floor && s.floor!==s.myId;
+  const sweeping=scanEnabled && !selectedTx && !isActive && !(scanActivityId && Date.now()-scanLastOnAirAt<SCAN_HOLD_MS);
+  const preview=scanEnabled && sweeping && id!==viewId;
+  const n=c?String(c.number).padStart(2,'0'):'--';
+  if(ui.screenChannelNumber)ui.screenChannelNumber.textContent='CH '+n;
+  if(ui.screenChannelTitle)ui.screenChannelTitle.textContent=c?.title||'Select channel';
+  if(ui.screenMode)ui.screenMode.textContent=radioMode.toUpperCase();
+  if(ui.screenLock)ui.screenLock.textContent=c?.secure?'LOCK':'OPEN';
+  if(ui.screenSignal)ui.screenSignal.textContent=!s?'NOT JOINED':s.ready()?'CONNECTED':'CONNECTING';
+  if(ui.screenScan)ui.screenScan.textContent=selectedTx?'TRANSMIT':isActive?'RECEIVING':scanEnabled?preview?'SCAN PREVIEW':'SCANNING':'MANUAL';
+  if(ui.scanIndicator)ui.scanIndicator.textContent=scanEnabled?'SCAN ON':'SCAN OFF';
+  if(ui.radioScan){
+    ui.radioScan.textContent=scanEnabled?'Scan on':'Scan off';
+    ui.radioScan.setAttribute('aria-pressed',String(scanEnabled));
+  }
+  if(ui.screenPeople)ui.screenPeople.textContent=s
+    ?(1+[...s.members.values()].filter(m=>m.data?.open).length)+' listening':'—';
+  if(ui.focusTitle)ui.focusTitle.textContent=c?.title||'No channel selected';
+  if(ui.focusStatus){
+    ui.focusStatus.textContent=!s?'Not joined':s.ready()?'Connected':'Connecting';
+    ui.focusStatus.className='status-badge'+(s?.ready()?' connected':'');
+  }
+  if(ui.focusSpeaker)ui.focusSpeaker.textContent=!s?'Join to listen':s.floor
+    ?s.info(s.floor).name:(s.monitor?'Channel idle':'Monitoring off');
+  if(ui.radioScreen){
+    ui.radioScreen.classList.toggle('receiving',Boolean(isActive));
+    ui.radioScreen.classList.toggle('scanning',Boolean(scanEnabled && !isActive));
+    ui.radioScreen.classList.toggle('transmitting',Boolean(selectedTx?.transmitting));
+  }
+  const targetChannel=storedRoom(focusedId);
+  const targetNumber=targetChannel?String(targetChannel.number).padStart(2,'0'):'--';
+  if(ui.radioPttTarget)ui.radioPttTarget.textContent='PTT TARGET: CH '+targetNumber;
+  if(ui.quick){
+    ui.quick.disabled=!target?.ready()||Boolean(selectedTx && selectedTx!==target)||
+      Boolean(target.floor && target.floor!==target.myId);
+    ui.quickText.textContent=target?.transmitting?'TRANSMITTING':target?.wantTalk?'REQUESTING…':'HOLD TO TALK';
+  }
+  if(ui.radioJoin){
+    ui.radioJoin.textContent=s?'LEAVE':'JOIN';
+    ui.radioJoin.disabled=!c || Boolean(selectedTx);
+    ui.radioJoin.setAttribute('aria-label',(s?'Leave ':'Join ')+(c?.title||'channel'));
+  }
+  if(ui.radioMonitor){
+    ui.radioMonitor.disabled=!s;
+    ui.radioMonitor.textContent=s?.monitor?'Monitor on':'Monitor off';
+    ui.radioMonitor.setAttribute('aria-pressed',String(Boolean(s?.monitor)));
+  }
+  if(ui.radioCall)ui.radioCall.disabled=!s?.ready();
+  if(ui.focusHint)ui.focusHint.textContent=scanEnabled
+    ?'Scan is a visual sweep; all joined monitored channels stay connected. PTT stays on CH '+targetNumber+'. Incoming activity switches to that channel for a reply.'
+    :'Use CH − / CH + to select a channel, Join to connect and Hold Talk to transmit.';
+}
+function updateQuick(){renderRadioDisplay();}
+ui.prevChannel?.addEventListener('click',()=>browseChannel(-1));
+ui.nextChannel?.addEventListener('click',()=>browseChannel(1));
+ui.radioJoin?.addEventListener('click',async()=>{
+  const c=storedRoom(scanDisplayId());
+  if(!c || !modeAllows(c) || selectedTx)return;
+  if(sessions.has(c.id)){leaveChannel(c.id);return;}
+  viewId=c.id;focusedId=c.id;
+  await joinChannel(c);
+  updateAll();
+});
+ui.radioMonitor?.addEventListener('click',()=>{
+  const c=storedRoom(scanDisplayId()),s=c&&sessions.get(c.id);
+  if(s)setMonitor(c.id,!s.monitor);
+});
+ui.radioCall?.addEventListener('click',()=>{
+  const c=storedRoom(scanDisplayId()),s=c&&sessions.get(c.id);
+  if(!s?.ready())return;
+  s.broadcast({type:'call'});
+  s.note='Call alert sent on '+c.title;
+  setMessage('Call sent to members of '+c.title+' only.');
+  updateRow(c.id);
+});
+ui.radioScan?.addEventListener('click',()=>setScan(!scanEnabled));
+ui.leftHanded?.addEventListener('click',()=>setPttSide('left'));
+ui.rightHanded?.addEventListener('click',()=>setPttSide('right'));
+let swipeStartX=null;
+ui.radioScreen?.addEventListener('touchstart',event=>{
+  swipeStartX=event.touches?.[0]?.clientX??null;
+},{passive:true});
+ui.radioScreen?.addEventListener('touchend',event=>{
+  const endX=event.changedTouches?.[0]?.clientX;
+  if(swipeStartX!==null && Number.isFinite(endX) && Math.abs(endX-swipeStartX)>55)
+    browseChannel(endX<swipeStartX?1:-1);
+  swipeStartX=null;
+},{passive:true});
+ui.radioScreen?.addEventListener('keydown',event=>{
+  if(event.key==='ArrowRight'||event.key==='ArrowDown'){event.preventDefault();browseChannel(1);}
+  if(event.key==='ArrowLeft'||event.key==='ArrowUp'){event.preventDefault();browseChannel(-1);}
+});
+setPttSide(pttSide);
+setInterval(()=>{if(scanEnabled)scanTick();},350);
 function updateAll(){for(const c of channels)updateRow(c.id);updateQuick();}
 drawColors();drawRows();
