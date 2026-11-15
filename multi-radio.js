@@ -948,6 +948,7 @@ function setPttSide(side){
 }
 function browseChannel(direction){
   if(selectedTx)return; // Cannot retarget the radio while PTT is held.
+  if(scanEnabled)setScan(false); // Physical channel selector overrides scan preview.
   const options=availableChannels();
   const current=options.findIndex(c=>c.id===viewId);
   viewId=options[(current<0?0:current+direction+options.length)%options.length].id;
@@ -998,16 +999,17 @@ function renderRadioDisplay(){
     ui.quickText.textContent=target?.transmitting?'TRANSMITTING':target?.wantTalk?'REQUESTING…':'HOLD TO TALK';
   }
   if(ui.radioJoin){
-    ui.radioJoin.textContent=s?'LEAVE':'JOIN';
-    ui.radioJoin.disabled=!c || Boolean(selectedTx);
+    ui.radioJoin.textContent=scanEnabled?'SCAN ACTIVE':s?'LEAVE':'JOIN';
+    // Never let a changing scan preview act as an accidental Leave/Join target.
+    ui.radioJoin.disabled=!c || Boolean(selectedTx) || scanEnabled;
     ui.radioJoin.setAttribute('aria-label',(s?'Leave ':'Join ')+(c?.title||'channel'));
   }
   if(ui.radioMonitor){
-    ui.radioMonitor.disabled=!s;
+    ui.radioMonitor.disabled=!s || scanEnabled;
     ui.radioMonitor.textContent=s?.monitor?'Monitor on':'Monitor off';
     ui.radioMonitor.setAttribute('aria-pressed',String(Boolean(s?.monitor)));
   }
-  if(ui.radioCall)ui.radioCall.disabled=!s?.ready();
+  if(ui.radioCall)ui.radioCall.disabled=!s?.ready() || scanEnabled;
   if(ui.focusHint)ui.focusHint.textContent=scanEnabled
     ?'Scan is a visual sweep; all joined monitored channels stay connected. PTT stays on CH '+targetNumber+'. Incoming activity switches to that channel for a reply.'
     :'Use CH − / CH + to select a channel, Join to connect and Hold Talk to transmit.';
@@ -1017,7 +1019,7 @@ ui.prevChannel?.addEventListener('click',()=>browseChannel(-1));
 ui.nextChannel?.addEventListener('click',()=>browseChannel(1));
 ui.radioJoin?.addEventListener('click',async()=>{
   const c=storedRoom(scanDisplayId());
-  if(!c || !modeAllows(c) || selectedTx)return;
+  if(!c || !modeAllows(c) || selectedTx || scanEnabled)return;
   if(sessions.has(c.id)){leaveChannel(c.id);return;}
   viewId=c.id;focusedId=c.id;
   await joinChannel(c);
@@ -1025,11 +1027,11 @@ ui.radioJoin?.addEventListener('click',async()=>{
 });
 ui.radioMonitor?.addEventListener('click',()=>{
   const c=storedRoom(scanDisplayId()),s=c&&sessions.get(c.id);
-  if(s)setMonitor(c.id,!s.monitor);
+  if(s && !scanEnabled)setMonitor(c.id,!s.monitor);
 });
 ui.radioCall?.addEventListener('click',()=>{
   const c=storedRoom(scanDisplayId()),s=c&&sessions.get(c.id);
-  if(!s?.ready())return;
+  if(!s?.ready() || scanEnabled)return;
   s.broadcast({type:'call'});
   s.note='Call alert sent on '+c.title;
   setMessage('Call sent to members of '+c.title+' only.');
