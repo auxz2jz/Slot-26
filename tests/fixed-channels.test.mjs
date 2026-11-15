@@ -119,7 +119,7 @@ const environmentNames=[
   'URLSearchParams','setTimeout','clearTimeout','setInterval','clearInterval'
 ];
 const appFactory=new Function(...utilityNames,...environmentNames,source+
-  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,getTranscripts:()=>transcriptEntries,sessions,ui,channels,rows};');
+  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,sessions,ui,channels,rows};');
 const utilsForTest={
   ...utils,...presets,WebRTCUsageMeter,formatDataBytes,
   checkChannelPin:(channel,pin)=>presets.checkChannelPin(channel,pin,webcrypto),
@@ -370,6 +370,9 @@ test('V6.5: sender opt-in transcribes PTT without affecting voice or remote moni
   flush();
   assert.equal(sender.getTranscripts().length,1);
   assert.equal(receiver.getTranscripts().length,1);
+  assert.equal(sender.getTranscriptPopupOpen(),false,'do not cover PTT while the speaker is transmitting');
+  assert.equal(receiver.getTranscriptPopupOpen(),true,'incoming text opens the scrollable popup');
+  assert.ok(receiver.ui.transcriptPopupLog.children.length>=1);
   assert.deepEqual(sender.getTranscripts().map(x=>[x.direction,x.name,x.channel,x.text]),
     [['tx','Patrol 1','Channel 01','North entrance clear.']]);
   assert.deepEqual(receiver.getTranscripts().map(x=>[x.direction,x.name,x.channel,x.text]),
@@ -379,6 +382,11 @@ test('V6.5: sender opt-in transcribes PTT without affecting voice or remote moni
   assert.equal(sender.getTranscripts()[0].text,'North entrance clear.');
   sender.releaseTalk(s);flush();
   assert.equal(s.track.enabled,false);
+  assert.equal(sender.getTranscriptPopupOpen(),true,'local finalized text pops up after Talk released');
+  sender.ui.transcriptClose.listeners.click[0]();
+  assert.equal(sender.getTranscriptPopupOpen(),false);
+  sender.ui.transcriptOpen.listeners.click[0]();
+  assert.equal(sender.getTranscriptPopupOpen(),true);
   assert.equal(recognition.stopped,true);
   recognition.fire('Second sentence after release',true,1);
   flush();
@@ -431,4 +439,23 @@ test('V6.5: speech recognition missing does not disable the PTT microphone',asyn
   a.releaseTalk(s);flush();
   assert.equal(s.track.enabled,false);
   a.leaveChannel(c.id);
+});
+
+test('V6.5: auto-popup preference can be disabled while transcript continues collecting',async()=>{
+  const c=presets.CHANNEL_PRESETS[0];
+  const tx=browser('Speaker',[]),rx=browser('Listener',[]);
+  await tx.joinChannel(c);flush();
+  await rx.joinChannel(c);flush();
+  for(let i=0;i<2;i++){for(const tick of intervals.values())tick();flush();}
+  tx.setTranscriptEnabled(true);
+  rx.ui.transcriptAutoPopup.checked=false;
+  rx.ui.transcriptAutoPopup.listeners.change[0]();
+  tx.startPTT(tx.sessions.get(c.id));flush();
+  tx.recognitionInstances[0].fire('Dispatch copies');flush();
+  assert.equal(rx.getTranscripts().length,1);
+  assert.equal(rx.getTranscriptPopupOpen(),false,'recipient opted out of pop-up');
+  assert.equal(JSON.parse(rx.localStorage.getItem('relay-one.transcript-popup.v6.5')),false);
+  assert.equal(tx.sessions.get(c.id).track.enabled,true,'voice remains live with text enabled');
+  tx.releaseTalk(tx.sessions.get(c.id));flush();
+  for(const device of [tx,rx])for(const id of [...device.sessions.keys()])device.leaveChannel(id);
 });
