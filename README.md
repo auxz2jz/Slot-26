@@ -1,8 +1,24 @@
-# Relay One — Handheld Radio and Visual Scan (Version 6.4)
+# Relay One — Handheld Radio with Optional Voice Transcripts (Version 6.5)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
 
 This is a browser-based push-to-talk prototype for a shared set of **ten fixed channels**. Every user sees the exact same channels. No individual invitation, channel creation, or channel distribution is required.
+
+## V6.5 — Experimental per-channel speech-to-text conversation panel
+
+The existing fast PeerJS/WebRTC PTT audio path is **unchanged**. An optional and independent text path sends **final recognized words** over existing room PeerJS data connections; no extra media negotiation, audio buffering, central server, transcription API key, or modified PTT codec is required.
+
+- New **Radio conversation** panel on the main screen, directly beneath the handheld radio. The transcript is vertically scrollable and shows each utterance, channel name, local timestamp, and the speaker's callsign.
+- **Transcribe my PTT speech** is **off by default**. On supported browsers, the transmitting user can opt in, and the browser SpeechRecognition API starts during PTT. It stops at release and final transcript chunks can arrive after release. Voice keeps working if caption recognition fails.
+- Local screen: `You · Patrol 1`, **SENT**; listener screen: `Patrol 1`, **RECEIVED**. The receiver does **not** need speech recognition enabled to see captions that the sender successfully generated.
+- Incoming captions are accepted only from members of a joined, monitored channel. A muted/unjoined channel cannot populate the local log. Text is displayed with `textContent`, not parsed as HTML.
+- Incoming transcript data is kept in the browser's current page session by default (up to the latest **120 messages**). The **Keep transcript on this device** switch is separately opt-in and persists its own copy in localStorage. **Clear conversation** deletes the current log and its local saved copy; **Copy transcript** provides a text export.
+- Browser **SpeechRecognition** / **webkitSpeechRecognition** support is inconsistent across Android, iPhone, and desktop browsers. Some browser implementations use an external online speech service, which may send speech audio to the browser provider. Some phones may be unable to recognize while a WebRTC mic is in use. The live voice radio should remain available even when speech text does not work. Test both the Samsung S22 Ultra and Pixel 8 Pro, along with iPhone, individually; this feature is a best-effort prototype rather than guaranteed production transcription.
+- Recognition is imperfect (especially with noise, names and radio jargon), so transcripts must not be treated as verified official incident logs. The app does not store or retransmit voice recordings for transcription.
+- Captions are only sent to peers currently connected on that channel, not to a central transcript database. No message history is synchronized with late joiners. Local browser storage is not encrypted separately beyond the browser's storage controls and may not be suitable for confidential work communications.
+- Existing Basic/Advanced, Scan, monitoring, left/right PTT and per-channel floor control are unchanged.
+
+**Rollback:** https://auxz2jz.github.io/Slot-26/legacy-v6-4.html
 
 ## V6.4 — Handheld radio interface and visual scan
 
