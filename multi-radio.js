@@ -210,7 +210,7 @@ function renderSpeechDiagnostics(){
     ' · Last: '+speechStats.lastState+
     (speechStats.lastError==='none'?'':' ('+speechStats.lastError+')');
   if(ui.speechDiagnosticLog)ui.speechDiagnosticLog.textContent=
-    speechEvents.length?speechEvents.join('\\n'):'No speech recognition attempts yet.';
+    speechEvents.length?speechEvents.join('\n'):'No speech recognition attempts yet.';
   if(ui.speechTest){
     ui.speechTest.disabled=!supported;
     ui.speechTest.textContent=speechTestCapture?'Stop speech test':'Test speech recognition';
@@ -249,7 +249,7 @@ function speechDiagnosticReport(){
     '',
     'Speech events (text and voice intentionally excluded):',
     ...speechEvents
-  ].join('\\n');
+  ].join('\n');
 }
 function stopSpeechTest(){
   const c=speechTestCapture;
