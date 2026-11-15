@@ -205,7 +205,7 @@ function persistTranscripts(){
 }
 function appendTranscript(direction,session,name,words){
   if(typeof words!=='string')return false;
-  const text=words.replace(/\\s+/g,' ').trim().slice(0,TRANSCRIPT_TEXT_MAX);
+  const text=words.replace(/\s+/g,' ').trim().slice(0,TRANSCRIPT_TEXT_MAX);
   if(!text || !session)return false;
   transcriptEntries.push({direction,channel:session.room.title,name:cleanName(name),
     text,at:Date.now()});
@@ -296,7 +296,7 @@ if(ui.transcriptCopy)ui.transcriptCopy.addEventListener('click',async()=>{
   const lines=transcriptEntries.map(item=>'['+transcriptStamp(item.at)+'] '+
     item.channel+' | '+(item.direction==='tx'?'You ('+item.name+')':item.name)+
     ' | '+item.text);
-  const text=lines.join('\\n');
+  const text=lines.join('\n');
   try{
     if(!navigator.clipboard?.writeText)throw Error('Clipboard unavailable');
     await navigator.clipboard.writeText(text);
