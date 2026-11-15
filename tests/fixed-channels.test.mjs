@@ -119,7 +119,7 @@ const environmentNames=[
   'URLSearchParams','setTimeout','clearTimeout','setInterval','clearInterval'
 ];
 const appFactory=new Function(...utilityNames,...environmentNames,source+
-  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,sessions,ui,channels,rows};');
+  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
 const utilsForTest={
   ...utils,...presets,WebRTCUsageMeter,formatDataBytes,
   checkChannelPin:(channel,pin)=>presets.checkChannelPin(channel,pin,webcrypto),
@@ -458,4 +458,71 @@ test('V6.5: auto-popup preference can be disabled while transcript continues col
   assert.equal(tx.sessions.get(c.id).track.enabled,true,'voice remains live with text enabled');
   tx.releaseTalk(tx.sessions.get(c.id));flush();
   for(const device of [tx,rx])for(const id of [...device.sessions.keys()])device.leaveChannel(id);
+});
+
+test('V6.6: speech diagnostics show browser capabilities and individual recognition milestones',async()=>{
+  const a=browser('Testing speech',[]);
+  const ch=presets.CHANNEL_PRESETS[0];
+  await a.joinChannel(ch);flush();
+  a.setTranscriptEnabled(true);
+  const session=a.sessions.get(ch.id);
+  a.startPTT(session);flush();
+  assert.equal(session.track.enabled,true);
+  const recognizer=a.recognitionInstances[0];
+  recognizer.onstart?.();
+  recognizer.onaudiostart?.();
+  recognizer.onspeechstart?.();
+  recognizer.fire('Visible only in conversation');
+  flush();
+  a.releaseTalk(session);flush();
+  recognizer.onend?.();
+  const report=a.speechDiagnosticReport();
+  assert.match(report,/SpeechRecognition: present/);
+  assert.match(report,/Recognition attempts: 1/);
+  assert.match(report,/Recognition started callbacks: 1/);
+  assert.match(report,/Audio started callbacks: 1/);
+  assert.match(report,/Speech detected callbacks: 1/);
+  assert.match(report,/Final result chunks: 1/);
+  assert.match(report,/RECOGNITION STOP REQUESTED/);
+  assert.ok(!report.includes('Visible only in conversation'),
+    'speech diagnostics must not contain transcript text');
+  assert.match(a.ui.speechDiagSummary.textContent,/Final results: 1/);
+  assert.equal(a.getTranscripts().length,1);
+  a.leaveChannel(ch.id);
+});
+test('V6.6: microphone-free radio test verifies recognizer without sending or saving speech',async()=>{
+  const a=browser('Testing only',[]);
+  assert.equal(a.sessions.size,0);
+  a.ui.speechTest.listeners.click[0]();
+  const recognizer=a.recognitionInstances[0];
+  assert.equal(recognizer.started,true);
+  recognizer.onstart?.();
+  recognizer.onaudiostart?.();
+  recognizer.onspeechstart?.();
+  recognizer.fire('One two three');
+  assert.match(a.ui.speechTestPreview.textContent,/One two three/);
+  assert.equal(a.getTranscripts().length,0,'test text is not part of radio transcript');
+  assert.match(a.speechDiagnosticReport(),/Local test final chunks: 1/);
+  assert.ok(!a.speechDiagnosticReport().includes('One two three'),'no spoken words in diagnostic export');
+  a.ui.speechTest.listeners.click[0]();
+  recognizer.onend?.();
+  assert.equal(recognizer.stopped,true);
+  assert.match(a.ui.speechTest.textContent,/Test speech recognition/);
+});
+test('V6.6: speech errors persist after recognition ends and do not silence voice',async()=>{
+  const a=browser('Permission test',[]);
+  const ch=presets.CHANNEL_PRESETS[0];
+  await a.joinChannel(ch);flush();
+  a.setTranscriptEnabled(true);
+  const session=a.sessions.get(ch.id);
+  a.startPTT(session);flush();
+  const recognition=a.recognitionInstances[0];
+  recognition.onerror?.({error:'not-allowed'});
+  recognition.onend?.();
+  assert.match(a.ui.transcriptStatus.textContent,/not-allowed/);
+  assert.match(a.speechDiagnosticReport(),/Last recognition error: not-allowed/);
+  assert.equal(session.track.enabled,true,'the radio microphone is still on while PTT is held');
+  a.releaseTalk(session);flush();
+  assert.equal(session.track.enabled,false);
+  a.leaveChannel(ch.id);
 });
