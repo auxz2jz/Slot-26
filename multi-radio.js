@@ -410,7 +410,15 @@ function flushSpeechPending(capture){
   while(capture.pending.length)transmitCaption(capture.session,capture.pending.shift());
 }
 function beginSpeechCapture(session){
-  if(!transcriptEnabled||!SpeechEngine||!session)return;
+  speechStats.lastPTT='pressed on '+(session?.room?.title||'unknown channel');
+  if(!transcriptEnabled){speechEvent('PTT CAPTIONS DISABLED');return;}
+  if(!SpeechEngine){
+    speechStats.lastError='SpeechRecognition not supported';
+    speechEvent('PTT RECOGNITION UNSUPPORTED');
+    transcriptStatus('This browser does not provide SpeechRecognition. Radio voice still works.');
+    return;
+  }
+  if(!session){speechEvent('PTT NO CHANNEL');return;}
   if(speechCapture)endSpeechCapture();
   try{
     const speech=new SpeechEngine();
@@ -419,49 +427,109 @@ function beginSpeechCapture(session){
     speech.interimResults=true;
     speech.maxAlternatives=1;
     const capture={speech,session,pending:[],seen:new Set(),
-      voiceStarted:session.transmitting===true,ended:false};
+      voiceStarted:session.transmitting===true,ended:false,hadError:false,
+      finalCount:0,interimCount:0};
     speechCapture=capture;
+    speechStats.attempts++;
+    speechEvent('PTT RECOGNITION REQUESTED',
+      'channel '+session.room.number+'; floor='+Boolean(session.floor===session.myId)+
+      '; voice-track enabled='+Boolean(session.track?.enabled));
+    speech.onstart=()=>{
+      speechStats.starts++;
+      speechEvent('ENGINE STARTED','PTT');
+      transcriptStatus('Speech recognizer started. Speak while holding Talk.');
+    };
+    speech.onaudiostart=()=>{
+      speechStats.audioStarts++;
+      speechEvent('MICROPHONE AUDIO START','PTT');
+    };
+    speech.onsoundstart=()=>speechEvent('SOUND DETECTED','PTT');
+    speech.onspeechstart=()=>{
+      speechStats.speechStarts++;
+      speechEvent('SPEECH DETECTED','PTT');
+    };
+    speech.onspeechend=()=>speechEvent('SPEECH ENDED','PTT');
+    speech.onaudioend=()=>speechEvent('MICROPHONE AUDIO ENDED','PTT');
+    speech.onnomatch=()=>{
+      speechEvent('NO RECOGNITION MATCH','PTT');
+      transcriptStatus('Speech was heard but not recognized. See diagnostics.');
+    };
     speech.onresult=event=>{
       if(!transcriptEnabled)return;
       for(let i=event.resultIndex||0;i<(event.results?.length||0);i++){
         const result=event.results[i];
-        if(!result?.isFinal||capture.seen.has(i))continue;
+        if(!result)continue;
+        if(!result.isFinal){
+          capture.interimCount++;speechStats.interim++;
+          if(capture.interimCount===1)speechEvent('INTERIM RESULT','PTT');
+          continue;
+        }
+        if(capture.seen.has(i))continue;
         capture.seen.add(i);
         const text=String(result[0]?.transcript||'').trim();
-        if(text)capture.pending.push(text);
+        if(!text)continue;
+        capture.finalCount++;speechStats.finals++;
+        speechEvent('FINAL RESULT','characters '+text.length+
+          '; voice ready='+capture.voiceStarted);
+        capture.pending.push(text);
       }
       flushSpeechPending(capture);
+      if(capture.finalCount>0)
+        transcriptStatus('Speech recognized. Final text added to radio conversation.');
     };
     speech.onerror=event=>{
-      transcriptStatus('Caption recognition unavailable ('+(event?.error||'error')+
-        '). Radio voice still works. You can turn transcription off.');
+      capture.hadError=true;speechStats.errors++;
+      speechStats.lastError=String(event?.error||'unknown').slice(0,60);
+      speechEvent('RECOGNITION ERROR',speechStats.lastError);
+      transcriptStatus('Speech recognition error: '+speechStats.lastError+
+        '. Voice radio remains available. Expand Speech-to-text diagnostics.');
     };
     speech.onend=()=>{
       capture.ended=true;
       if(speechCapture===capture)speechCapture=null;
-      if(transcriptEnabled && (!selectedTx||selectedTx!==session))
-        transcriptStatus('Ready for the next PTT. Final text may take a moment.');
+      speechEvent('RECOGNITION ENDED',
+        'final='+capture.finalCount+'; interim='+capture.interimCount+
+        '; PTT transmit granted='+capture.voiceStarted+
+        (capture.hadError?'; error='+speechStats.lastError:''));
+      if(!speechCapture&&transcriptEnabled){
+        if(capture.hadError)transcriptStatus('Speech recognition failed ('+
+          speechStats.lastError+'). Expand diagnostics for details.');
+        else if(capture.finalCount===0)
+          transcriptStatus('No text recognized. Expand Speech-to-text diagnostics to see whether the microphone started.');
+        else transcriptStatus('Text captured. Ready for the next transmission.');
+      }
     };
-    // Calling from PTT pointerdown retains the required user gesture in supporting browsers.
+    transcriptStatus('Requesting browser speech recognition…');
+    // Called within PTT user gesture. Never delay or await the voice sender.
     speech.start();
-    transcriptStatus('Listening for PTT speech… voice transmits normally.');
   }catch(error){
-    speechCapture=null;
-    transcriptStatus('Captions could not start on this browser. Radio voice remains available.');
+    if(speechCapture?.session===session)speechCapture=null;
+    speechStats.errors++;
+    speechStats.lastError=String(error?.name||'start threw').slice(0,60);
+    speechEvent('RECOGNITION START FAILED',speechStats.lastError);
+    transcriptStatus('Speech recognition could not start ('+speechStats.lastError+
+      '). Voice radio remains unaffected.');
   }
 }
 function speechDidTransmit(session){
+  speechStats.lastPTT='voice transmitting on '+session.room.title;
   if(speechCapture?.session===session){
     speechCapture.voiceStarted=true;
+    speechEvent('PTT VOICE TRACK ENABLED','captions may be delivered');
     flushSpeechPending(speechCapture);
-  }
+  }else if(transcriptEnabled) speechEvent('PTT VOICE TRACK ENABLED',
+    SpeechEngine?'no speech capture active':'SpeechRecognition unsupported');
 }
 function endSpeechCapture(session=null){
   const c=speechCapture;
   if(!c || session && c.session!==session)return;
   speechCapture=null;
-  try{c.speech.stop();}catch{}
-  if(transcriptEnabled)transcriptStatus('Finishing speech recognition…');
+  speechEvent('RECOGNITION STOP REQUESTED',
+    'floor='+c.voiceStarted+'; final='+c.finalCount+'; interim='+c.interimCount);
+  try{c.speech.stop();}catch(error){
+    speechEvent('RECOGNITION STOP FAILED',String(error?.name||'unknown'));
+  }
+  if(transcriptEnabled && !c.hadError)transcriptStatus('Finishing speech recognition…');
 }
 function setTranscriptEnabled(enabled){
   transcriptEnabled=Boolean(enabled);storeSet(TRANSCRIPT_ENABLED_KEY,transcriptEnabled);
@@ -469,6 +537,8 @@ function setTranscriptEnabled(enabled){
   if(!transcriptEnabled){endSpeechCapture();transcriptStatus('Your speech recognition is off. Incoming captions can still appear.');}
   else if(!SpeechEngine)transcriptStatus('Speech recognition is unavailable in this browser. Incoming captions can still appear.');
   else transcriptStatus('Ready. Hold Talk to transcribe your voice; results may appear after release.');
+  speechEvent(transcriptEnabled?'CAPTIONS ENABLED':'CAPTIONS DISABLED',
+    SpeechEngine?'Speech API present':'Speech API unavailable');
 }
 if(ui.transcriptEnabled)ui.transcriptEnabled.addEventListener('change',()=>{
   setTranscriptEnabled(ui.transcriptEnabled.checked);
@@ -708,6 +778,7 @@ ui.enableSpeakers.addEventListener('click',async()=>{
 
 function startPTT(s){
   if(!s || !s.ready() || selectedTx && selectedTx!==s || s.floor && s.floor!==s.myId)return;
+  if(speechTestCapture)stopSpeechTest();
   unlockSound();selectedTx=s;s.wantTalk=true;logRadio('PTT PRESSED',s.room.title);
   for(const other of sessions.values())other.applyAudioOutput();
   if(s.isHost){if(!s.floor)s.setFloor(s.myId,profile.txTone);}
@@ -717,7 +788,10 @@ function startPTT(s){
 }
 function releaseTalk(s){
   if(!s)return;
-  s.wantTalk=false;s.disableTransmit();endSpeechCapture(s);logRadio('PTT RELEASED',s.room.title);
+  s.wantTalk=false;s.disableTransmit();endSpeechCapture(s);
+  speechStats.lastPTT='released '+s.room.title;
+  speechEvent('PTT RELEASED','voice track disabled');
+  logRadio('PTT RELEASED',s.room.title);
   if(selectedTx===s)selectedTx=null;
   if(transcriptPopupPending && autoTranscriptPopup){
     transcriptPopupPending=false;
