@@ -145,7 +145,8 @@ function browser(name,rooms,speechSupported=true){
     stop(){this.stopped=true;}
     fire(text,final=true,index=0){
       const result=[{transcript:text}];result.isFinal=final;
-      this.onresult?.({resultIndex:index,results:[result]});
+      const results=Array.from({length:index+1},()=>null);results[index]=result;
+      this.onresult?.({resultIndex:index,results});
     }
   }
   const window={isSecureContext:true,Peer,addEventListener(){},
