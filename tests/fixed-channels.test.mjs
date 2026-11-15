@@ -116,7 +116,7 @@ const utilityNames=[
 ];
 const environmentNames=[
   'document','window','navigator','localStorage','location','history','MediaStream',
-  'URLSearchParams','setTimeout','clearTimeout','setInterval','clearInterval'
+  'URLSearchParams','Worker','setTimeout','clearTimeout','setInterval','clearInterval'
 ];
 const appFactory=new Function(...utilityNames,...environmentNames,source+
   '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,setTranscriptMode,loadLocalAsr,getAsrState:()=>asrState,getAsrStats:()=>asrStats,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
@@ -127,7 +127,7 @@ const utilsForTest={
   guestId:id=>utils.guestId(id,utils.newRoom(webcrypto)),
   deriveProtectedRoomId:(id,pin)=>utils.deriveProtectedRoomId(id,pin,webcrypto)
 };
-function browser(name,rooms,speechSupported=true){
+function browser(name,rooms,speechSupported=true,options={}){
   const els=new Map();
   const document={hidden:false,body:{classList:{toggle(){}}},getElementById(id){if(!els.has(id))els.set(id,new FakeElement());return els.get(id);},
     createElement(tag){return new FakeElement(tag);},addEventListener(){}};
@@ -149,14 +149,47 @@ function browser(name,rooms,speechSupported=true){
       this.onresult?.({resultIndex:index,results});
     }
   }
+  const workerInstances=[];
+  class FakeWorker{
+    constructor(path,config){this.path=path;this.config=config;this.sent=[];workerInstances.push(this);}
+    postMessage(msg){
+      this.sent.push(msg);
+      if(msg.type==='load')soon(()=>this.onmessage?.({data:{type:'engine-state',state:'ready',message:'Mock Whisper ready'}}));
+      if(msg.type==='transcribe')soon(()=>this.onmessage?.({data:{type:'job-result',id:msg.id,text:'Clear on channel one'}}));
+    }
+    terminate(){this.terminated=true;}
+  }
+  class FakeRecorder{
+    static isTypeSupported(){return true;}
+    constructor(stream){this.stream=stream;this.state='inactive';this.mimeType='audio/webm';}
+    start(){this.state='recording';}
+    stop(){
+      this.state='inactive';
+      soon(()=>{
+        this.ondataavailable?.({data:new Blob([new Uint8Array(3200)],{type:this.mimeType})});
+        this.onstop?.();
+      });
+    }
+  }
+  class FakeAudioContext{
+    constructor(){this.state='running';}
+    decodeAudioData(){
+      const audio=new Float32Array(16000).fill(0.18);
+      return Promise.resolve({sampleRate:16000,length:16000,numberOfChannels:1,
+        duration:1,getChannelData:()=>audio});
+    }
+    close(){return Promise.resolve();}
+  }
   const window={isSecureContext:true,Peer,addEventListener(){},
     SpeechRecognition:speechSupported?FakeRecognition:undefined,
+    MediaRecorder:options.local?FakeRecorder:undefined,
+    AudioContext:options.local?FakeAudioContext:undefined,
     prompt(){return '1234';},confirm(){return true;}};
   const location={href:'https://example.invalid/Slot-26/',pathname:'/Slot-26/',search:''};
   const app=appFactory(...utilityNames.map(k=>utilsForTest[k]),document,window,navigator,
-    localStorage,location,{replaceState(){}},FakeStream,URLSearchParams,
+    localStorage,location,{replaceState(){}},FakeStream,URLSearchParams,FakeWorker,
     soon,cancel,repeat,stopRepeat);
-  return {...app,localStorage,recognitionInstances};
+  return {...app,localStorage,recognitionInstances,workerInstances};
 
 }
 test('V6: overlapping preset channels isolate PTT and monitoring',async()=>{
@@ -525,4 +558,50 @@ test('V6.6: speech errors persist after recognition ends and do not silence voic
   a.releaseTalk(session);flush();
   assert.equal(session.track.enabled,false);
   a.leaveChannel(ch.id);
+});
+
+test('V6.7: shared microphone local Whisper recording preserves live PTT and distributes later transcript',async()=>{
+  const channel=presets.CHANNEL_PRESETS[0];
+  const sender=browser('Patrol 1',[],true,{local:true});
+  const receiver=browser('Dispatch',[]);
+  await sender.joinChannel(channel);flush();
+  await receiver.joinChannel(channel);flush();
+  for(let i=0;i<3;i++){for(const tick of intervals.values())tick();flush();}
+  assert.equal(sender.ui.transcriptEngine.value,'local');
+  sender.setTranscriptEnabled(true);
+  sender.loadLocalAsr();flush();
+  assert.equal(sender.getAsrState(),'ready');
+  assert.equal(sender.workerInstances.length,1);
+  const session=sender.sessions.get(channel.id);
+  sender.startPTT(session);flush();
+  assert.equal(session.track.enabled,true,'live radio voice must transmit immediately');
+  assert.equal(sender.getAsrStats().recorded,1,'PTT floor triggers recording from existing microphone');
+  assert.equal(sender.recognitionInstances.length,0,'on-device engine must never open a second speech microphone');
+  sender.releaseTalk(session);flush();
+  assert.equal(session.track.enabled,false,'PTT release must immediately mute voice');
+  for(let i=0;i<6;i++){await new Promise(resolve=>setTimeout(resolve,2));flush();}
+  assert.equal(sender.getAsrStats().completed,1,'worker completes queued local transcript');
+  assert.equal(sender.getTranscripts().length,1);
+  assert.equal(receiver.getTranscripts().length,1,'remote listener receives caption via existing data channel');
+  assert.equal(sender.getTranscripts()[0].direction,'tx');
+  assert.equal(receiver.getTranscripts()[0].direction,'rx');
+  assert.equal(receiver.getTranscripts()[0].name,'Patrol 1');
+  assert.equal(sender.getAsrStats().errors,0);
+  assert.match(sender.speechDiagnosticReport(),/On-device inference completed: 1/);
+  for(const device of [sender,receiver])for(const id of [...device.sessions.keys()])device.leaveChannel(id);
+});
+
+test('V6.7: without explicit model load, PTT still works and never downloads a model',async()=>{
+  const channel=presets.CHANNEL_PRESETS[0];
+  const radio=browser('Patrol 1',[],true,{local:true});
+  await radio.joinChannel(channel);flush();
+  radio.setTranscriptEnabled(true);
+  const s=radio.sessions.get(channel.id);
+  radio.startPTT(s);flush();
+  assert.equal(s.track.enabled,true);
+  assert.equal(radio.workerInstances.length,0,'joining or enabling captions never starts a large download');
+  assert.equal(radio.getAsrStats().recorded,0,'no recording if model not ready');
+  radio.releaseTalk(s);flush();
+  assert.equal(s.track.enabled,false);
+  radio.leaveChannel(channel.id);
 });
