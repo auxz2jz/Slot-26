@@ -224,3 +224,21 @@ body.radio-compact .group-people,body.radio-compact .group-msg{display:none}
  .transcript-log{height:215px;padding:9px}
  .transcript-entry{max-width:98%}
 }
+
+/* V6.5: non-modal transcript pop-up. Avoid covering the main PTT by positioning near the bottom. */
+.radio-top-actions{display:flex;align-items:center;gap:7px}
+.radio-text-button{padding:7px 13px!important;font-size:12px!important;font-weight:800}
+.transcript-popup{position:fixed;z-index:80;bottom:calc(12px + env(safe-area-inset-bottom,0px));right:12px;width:min(380px,calc(100vw - 24px));max-height:min(310px,48vh);display:flex;flex-direction:column;border:1px solid #72c9ab;background:#102a35;color:#e9fbf6;border-radius:15px;box-shadow:0 8px 40px #06121bd9}
+.transcript-popup-head{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;gap:8px;border-bottom:1px solid #365967}
+.transcript-popup-head strong{font-size:13px}
+.transcript-popup-head button{font-size:12px;padding:6px 12px}
+.transcript-popup-messages{min-height:75px;max-height:255px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:10px 12px;display:flex;flex-direction:column;gap:10px}
+.transcript-popup-line{border-left:3px solid #5c91a7;padding-left:8px}
+.transcript-popup-line.tx{border-left-color:#62c89e}
+.transcript-popup-line strong{color:#bce7d6;font-size:10px;line-height:1.4;display:block;overflow-wrap:anywhere}
+.transcript-popup-line p{color:#f1fbf8;line-height:1.35;font-size:13px;margin:4px 0 0;overflow-wrap:anywhere}
+@media(max-width:480px){
+ .transcript-popup{width:min(350px,calc(100vw - 18px));right:9px;bottom:calc(9px + env(safe-area-inset-bottom,0px));max-height:42vh}
+ .transcript-popup-messages{max-height:180px}
+ .radio-text-button{padding:6px 9px!important}
+}
