@@ -198,3 +198,29 @@ body.radio-compact .group-people,body.radio-compact .group-msg{display:none}
  .radio-ptt-target{font-size:8px}
  .radio-lcd-top{font-size:8px}
 }
+
+/* V6.5: optional voice transcripts stay visually independent of live radio. */
+.radio-transcripts{padding-top:17px!important;padding-bottom:15px!important}
+.radio-transcripts .section-heading{align-items:center}
+.radio-transcripts .secondary-text{font-size:11px;white-space:nowrap}
+.transcript-settings{display:flex;flex-wrap:wrap;gap:8px 18px;margin:9px 0 7px}
+.transcript-settings .setting-toggle{display:flex;align-items:center;gap:8px;margin:0;font-size:13px;line-height:1.4}
+.transcript-settings input{width:18px;height:18px;flex-shrink:0;accent-color:var(--accent)}
+#transcriptStatus{margin:8px 0 10px;font-size:12px;line-height:1.45}
+.transcript-log{height:230px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;border:1px solid #37606a;border-radius:12px;background:#091b27;padding:11px;display:flex;flex-direction:column;gap:10px}
+.transcript-empty{font-size:13px;color:#a5c9d0;text-align:center;margin:auto;padding:12px}
+.transcript-entry{max-width:96%;padding:9px 11px;border:1px solid #294c5a;border-radius:11px;background:#112b39;align-self:flex-start;min-width:0}
+.transcript-entry.tx{align-self:flex-end;background:#153c35;border-color:#397862}
+.transcript-meta{display:flex;align-items:center;flex-wrap:wrap;gap:3px 9px;font-size:11px;line-height:1.3}
+.transcript-meta strong{color:#d4f9eb;overflow-wrap:anywhere}
+.transcript-meta span{color:#a5bdca;font-size:10px}
+.transcript-entry p{font-size:13px;color:#f0f8f6;line-height:1.45;margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.transcript-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
+.transcript-toolbar button{font-size:12px;padding:9px;border-radius:9px}
+.transcript-notice{font-size:11px!important;line-height:1.4;margin:12px 0 0!important}
+@media(max-width:410px){
+ .transcript-settings{flex-direction:column;gap:9px}
+ .radio-transcripts .section-heading{gap:8px}
+ .transcript-log{height:215px;padding:9px}
+ .transcript-entry{max-width:98%}
+}
