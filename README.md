@@ -1,8 +1,23 @@
-# Relay One — Handheld Radio with Speech Diagnostics (Version 6.6)
+# Relay One — Handheld Radio with On-Device Speech-to-Text (Version 6.7)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
 
 This is a browser-based push-to-talk prototype for a shared set of **ten fixed channels**. Every user sees the exact same channels. No individual invitation, channel creation, or channel distribution is required.
+
+## V6.7 — Optional shared-microphone, on-device speech-to-text (experimental)
+
+**Motivation:** Android Chrome could recognize speech in the isolated browser test with no radio channel joined, but not while Relay One's WebRTC channel microphone was open. Chrome for Android does not currently support passing an existing audio track to the built-in SpeechRecognition API. V6.7 adds an alternative that shares the radio microphone and performs local inference instead of trying to open a second microphone.
+
+**What changed:**
+- The default for new users is now **On-device Whisper** (English, `onnx-community/whisper-tiny.en`, via pinned Transformers.js 3.7.6). The old **Browser recognition — legacy** mode remains selectable for regression testing.
+- Enable **Transcribe my PTT speech**, choose **On-device Whisper**, and explicitly tap **Download / load on-device speech model**. The model and runtime may download tens of megabytes; downloads are **never** started automatically merely by joining or enabling captions. Models can be cached by the browser.
+- Once the model reports **ready**, join a radio channel and hold PTT. Live WebRTC voice uses the same pre-existing connection and microphone track as before.
+- When the **transmit floor is granted**, the app clones that same microphone track for a temporary MediaRecorder capture. No additional `getUserMedia` request is made. On PTT release the capture stops, is decoded to 16 kHz PCM in memory and sent to a dedicated module Web Worker for Whisper inference. Processing can take seconds or longer. The result is sent over existing channel PeerJS data connections just like prior captions and retains callsign/channel/sent/received labels.
+- Long messages are split into up to three 24-second tasks (max 72 s processed). No audio blobs are stored or uploaded. Only transcript text is optionally saved on the device if **Keep transcript** is enabled.
+- Speech diagnostics report on-device model load, recording start, byte count, decoded audio level, queue and inference results; failures are visible rather than silently producing an empty text window. The old **Test browser speech (legacy)** is still available to diagnose the separate microphone API; it does not test on-device Whisper.
+- This is an **experimental client-side speech model**, not a guarantee of success on Android: a one-time model download, CPU/RAM cost, and mobile browser decoding/worker limitations may prevent it from working or affect other tasks under load. If it fails, turn the caption switch off; existing PTT is unaffected by disabling transcription. We have automated JavaScript and simulated audio tests, but no physical Android microphone/model test has yet been performed. Test initially while stationary and not relying on the system for urgent communications.
+- Model assets are downloaded from Hugging Face and the Transformers.js runtime from jsDelivr. Spoken audio for **on-device mode** is not uploaded to either; the **legacy mode** may use a browser provider's cloud speech service.
+- **Rollback:** https://auxz2jz.github.io/Slot-26/legacy-v6-6.html
 
 ## V6.6 — Speech recognition diagnostics and isolated device test
 
