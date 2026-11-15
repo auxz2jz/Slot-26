@@ -7,15 +7,15 @@
 <meta name="description" content="Relay One handheld-style push-to-talk with Basic/Advanced channels, visual scan, and instant radio activity display.">
 <title>Relay One — Shared Radio Channels</title>
 <link rel="stylesheet" href="./styles.css?v=4.1.0">
-<link rel="stylesheet" href="./multi.css?v=6.5.0">
+<link rel="stylesheet" href="./multi.css?v=6.6.0">
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
-<script type="module" src="./multi-radio.js?v=6.5.0"></script>
+<script type="module" src="./multi-radio.js?v=6.6.0"></script>
 </head>
 <body>
 <main class="app multi-app">
   <header class="masthead">
     <div class="brand-mark" aria-hidden="true">◉</div>
-    <div><p class="eyebrow">RELAY ONE / RADIO V6.5</p><h1>Field radio</h1></div>
+    <div><p class="eyebrow">RELAY ONE / RADIO V6.6</p><h1>Field radio</h1></div>
     <span id="channelModeBadge" class="version">2 channels</span>
   </header>
 
@@ -100,6 +100,18 @@
       <button id="transcriptCopy" type="button" class="secondary">Copy transcript</button>
       <button id="transcriptClear" type="button" class="secondary">Clear conversation</button>
     </div>
+    <details class="speech-diagnostics" id="speechDiagnosticsPanel">
+      <summary><strong>Speech-to-text diagnostics</strong> <span id="speechDiagBadge" class="secondary-text">Checking browser…</span></summary>
+      <p class="small muted">This checks speech-recognition support and microphone events. Diagnostic logs exclude spoken words, PINs, and audio.</p>
+      <p id="speechDiagSummary" class="small">Waiting for diagnostic data.</p>
+      <div class="speech-diag-actions">
+        <button type="button" id="speechTest" class="secondary">Test speech recognition</button>
+        <button type="button" id="speechCopyDiagnostics" class="secondary">Copy speech diagnostics</button>
+      </div>
+      <p class="small muted">Test mode listens for a short phrase on this device only. Tap again to stop. It does not transmit or add text to the radio conversation.</p>
+      <p class="small" id="speechTestPreview" role="status" aria-live="polite">Test not started.</p>
+      <pre id="speechDiagnosticLog" class="diag-log" aria-label="Speech recognition diagnostic events">No recognition attempts yet.</pre>
+    </details>
     <p class="small muted transcript-notice">Speech recognition is experimental and may use your browser provider's online speech service. It may fail on some phones. It never replaces the live PTT audio. Transcripts can contain recognition errors; saving is optional and local to this browser.</p>
   </section>
 
@@ -179,7 +191,8 @@
     <p id="errorMessage" class="error hidden" role="alert"></p>
     <p class="small muted">Only channels you've joined receive audio, participant names, calls, and on-air activity. Monitoring a channel requires joining it. Basic/Advanced is not an access restriction. Channels 06–10 have only browser-side PIN checks, which can be bypassed; a real employee system requires login and server-enforced permissions.</p>
     <div class="backup-links">
-      <a href="./legacy-v6-4.html">Previous version (V6.4)</a>
+      <a href="./legacy-v6-5.html">Previous version (V6.5)</a>
+      <a href="./legacy-v6-4.html">Earlier version (V6.4)</a>
       <a href="./legacy-v6-3.html">Older version (V6.3)</a>
       <a href="./legacy-v6-2.html">Older version (V6.2)</a>
       <a href="./legacy-v6-1.html">Earlier layout (V6.1)</a>
