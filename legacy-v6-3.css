@@ -1,0 +1,126 @@
+
+/* Relay One V5 multi-channel dashboard */
+.multi-app{max-width:760px}
+.multi-app .card{padding:20px}
+.multi-app .settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px}
+.multi-app .setting-toggle{margin:9px 0}
+.multi-channel-list{display:grid;gap:12px;margin:15px 0}
+.multi-channel{background:#0b2130;border:1px solid #375366;border-radius:16px;padding:15px;transition:border-color .18s}
+.multi-channel.active{border-color:#4f987e}
+.multi-channel.focused{outline:2px solid #5bcfa5;outline-offset:2px}
+.group-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.group-title{font-size:19px;font-weight:800;line-height:1.3;overflow-wrap:anywhere}
+.group-subtitle{font-size:12px;color:var(--muted);margin-top:2px}
+.group-status{font-size:11px;color:#d5e6eb;background:#294457;padding:6px 9px;border-radius:30px;white-space:nowrap}
+.group-status.online{color:#b5f9d7;background:#164b3a}
+.group-status.warning{color:#ffda9a;background:#584728}
+.group-signal{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:12px 0;border-top:1px solid #29485a;padding-top:12px}
+.on-air{font-size:13px;color:#bdd6dd;flex:1;overflow-wrap:anywhere}
+.on-air strong{color:#fff}
+.group-action-row{display:grid;grid-template-columns:1fr 1fr 1.1fr 1fr;gap:8px}
+.group-action-row button{padding:12px 7px;border-radius:10px;font-size:13px}
+.small-ptt{background:var(--accent);color:#073022;border:0;touch-action:none;user-select:none;-webkit-user-select:none;font-weight:900}
+.small-ptt.sending{background:#f4b475;color:#201307}
+.small-ptt:disabled{background:#637a82;color:#233f48}
+.group-extra{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px 12px;margin-top:11px}
+.group-extra button{border:0;background:transparent;color:#bde3e5;text-decoration:underline;padding:4px;font-size:12px}
+.monitor-label{display:flex;align-items:center;gap:7px;color:#dcecf0;font-size:13px;cursor:pointer}
+.monitor-label input{width:18px;height:18px;accent-color:var(--accent);flex:none}
+.group-people{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.group-person{font-size:11px;border-radius:20px;background:#224458;color:#e0f1f5;padding:4px 9px;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.group-person.on-air-person{background:#285541;color:#a5ffd8}
+.group-muted{opacity:.78}
+.group-muted .group-signal{opacity:.8}
+.group-count{font-size:12px;color:#a8d6d0;font-weight:800}
+.multi-toolbar{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}
+.multi-toolbar .secondary{font-size:12px;flex:1;white-space:nowrap;padding:11px 7px}
+.quick-panel{background:linear-gradient(120deg,#102f3b,#0f2636)}
+.quick-controls{display:flex;gap:25px;align-items:center;padding:9px 0 0}
+.compact-talk{height:162px;width:162px;min-width:162px;box-shadow:0 0 0 8px #1c4944,0 0 0 15px #163841}
+.compact-talk:disabled{box-shadow:0 0 0 8px #1b3840,0 0 0 15px #15303c}
+.compact-talk span{font-size:12px}
+.quick-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:9px}
+.quick-info strong{font-size:23px;overflow-wrap:anywhere}
+.quick-info p{margin:0}
+.counter{font-size:12px;color:#b2d8c8}
+.backup-links{display:flex;flex-wrap:wrap;gap:15px;margin:12px 0 0}
+.backup-links a{font-size:12px;color:#b1dfef}
+.group-msg{font-size:11px;color:#c0d9dc;margin:8px 0 0;line-height:1.4}
+.multi-app .colors{margin-bottom:9px}
+@media(max-width:500px){.multi-app .settings-grid{grid-template-columns:1fr}.quick-controls{gap:20px}.compact-talk{height:135px;width:135px;min-width:135px}.quick-info strong{font-size:19px}.group-action-row{grid-template-columns:repeat(4,1fr);gap:5px}.group-action-row button{font-size:12px;padding:13px 3px}.multi-app .card{padding:15px}.multi-toolbar .secondary{min-width:0}.group-extra{gap:3px 9px}}
+@media(max-width:350px){.compact-talk{height:118px;width:118px;min-width:118px}.group-action-row{grid-template-columns:1fr 1fr}.quick-controls{gap:18px}}
+
+@media(max-width:520px){.multi-toolbar{display:grid;grid-template-columns:1fr 1fr}}
+
+/* V6 fixed-channel selectors: ten identical channels on every device. */
+.channel-select-label{display:flex!important;align-items:center;gap:11px;margin:0!important;cursor:pointer}
+.channel-select-label input[type=checkbox]{width:23px;height:23px;min-width:23px;margin:0;accent-color:var(--accent);cursor:pointer}
+.channel-select-label .group-title{font-size:20px}
+.group-action-row{grid-template-columns:1fr 1.6fr 1fr}
+.multi-channel .monitor-label:has(input:disabled){opacity:.5;cursor:not-allowed}
+.multi-channel .monitor-label input:disabled{cursor:not-allowed}
+.group-subtitle{padding-left:34px}
+@media(max-width:350px){.group-action-row{grid-template-columns:1fr 1fr 1fr}.group-action-row button{font-size:11px}}
+
+/* Connection troubleshooting / V6.1 */
+.radio-diag{margin-block:12px}
+.radio-diag summary{display:flex;gap:10px;align-items:center;justify-content:space-between;cursor:pointer;list-style:none;padding:5px 0}
+.radio-diag summary::-webkit-details-marker{display:none}
+.radio-diag summary:after{content:"▾";font-size:20px;color:#9ad5d2}
+.radio-diag[open] summary:after{content:"▴"}
+.radio-diag .secondary-text{font-size:11px;line-height:1.5}
+.diag-log{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;line-height:1.5;max-height:290px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#081521;border-radius:9px;border:1px solid #375266;color:#c9e5e7;padding:13px;margin:10px 0 0}
+.radio-diag .multi-toolbar .secondary{white-space:normal}
+
+/* V6.2: estimated WebRTC data usage and reversible compact radio layout. */
+.data-usage-panel{padding-top:15px!important;padding-bottom:15px!important}
+.data-usage-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.data-usage-cell{display:flex;flex-direction:column;gap:5px;min-width:0;background:#0c2433;border:1px solid #274659;border-radius:12px;padding:12px}
+.data-amount{font-size:25px;line-height:1.15;font-variant-numeric:tabular-nums;color:#d4f9ed;overflow-wrap:anywhere}
+.data-usage-cell .small{font-size:11px;white-space:normal;overflow-wrap:anywhere}
+.data-meter-bottom{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:10px}
+.data-meter-bottom .small{font-size:11px;line-height:1.4}
+.data-meter-bottom button{flex-shrink:0;padding:8px 10px}
+.layout-switcher{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 12px}
+.layout-switch-buttons{display:flex;gap:4px}
+.layout-switch-buttons button{padding:8px 12px;font-size:12px}
+.layout-switch-buttons button[aria-pressed="true"]{color:#08372c;background:#6de2b6;border-color:#7fefd0;font-weight:800}
+
+/* Compact mode keeps the talk button, speaker activity, and independent monitor switch visible. */
+body.radio-compact .multi-channel-list{gap:5px;margin:7px 0}
+body.radio-compact .multi-channel{padding:8px 10px;border-radius:10px;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"head head" "signal signal" "actions extra";column-gap:8px;row-gap:3px}
+body.radio-compact .group-head{grid-area:head;align-items:center;gap:6px}
+body.radio-compact .group-title{font-size:15px!important;line-height:1.2}
+body.radio-compact .group-subtitle{font-size:10px;margin-top:0}
+body.radio-compact .channel-select-label{gap:7px}
+body.radio-compact .channel-select-label input{width:19px;height:19px;min-width:19px}
+body.radio-compact .group-subtitle{padding-left:26px}
+body.radio-compact .group-status{font-size:10px;padding:3px 7px}
+body.radio-compact .group-signal{grid-area:signal;gap:6px;min-height:17px;padding:0;margin:0;border:0}
+body.radio-compact .on-air{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.radio-compact .group-count{font-size:10px}
+body.radio-compact .group-action-row{grid-area:actions;grid-template-columns:0.85fr 1.4fr .8fr;gap:5px}
+body.radio-compact .group-action-row button{font-size:12px;padding:9px 3px;min-height:40px;border-radius:8px}
+body.radio-compact .group-extra{grid-area:extra;align-items:center;justify-content:flex-end;margin:0;gap:0}
+body.radio-compact .monitor-label{gap:4px;font-size:10px;line-height:1.2}
+body.radio-compact .monitor-label input{width:17px;height:17px}
+body.radio-compact .group-people,body.radio-compact .group-msg{display:none}
+@media(max-width:400px){
+ .data-usage-grid{gap:6px}
+ .data-usage-cell{padding:9px}
+ .data-amount{font-size:20px}
+ body.radio-compact .multi-channel{padding:7px}
+ body.radio-compact .group-action-row button{font-size:11px}
+ body.radio-compact .monitor-label{font-size:10px}
+}
+
+/* V6.3: Basic / Advanced shared-channel radio mode picker. */
+.radio-mode-picker{padding:11px 12px;margin:7px 0 12px;border:1px solid #31596a;border-radius:12px;background:#0b2231}
+.radio-mode-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:9px}
+.radio-mode-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.radio-mode-buttons .secondary{min-height:60px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:9px 7px;border:1px solid #36566b;border-radius:10px}
+.radio-mode-buttons strong{font-size:16px}
+.radio-mode-buttons span{font-size:11px;opacity:.8}
+.radio-mode-buttons [aria-pressed="true"]{background:#64dfb1;color:#052b21;border-color:#88f3c8}
+.radio-mode-buttons [aria-pressed="true"] span{opacity:1}
+.multi-channel.hidden{display:none!important}
