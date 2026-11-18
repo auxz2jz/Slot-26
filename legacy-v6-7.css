@@ -1,0 +1,267 @@
+
+/* Relay One V5 multi-channel dashboard */
+.multi-app{max-width:760px}
+.multi-app .card{padding:20px}
+.multi-app .settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px}
+.multi-app .setting-toggle{margin:9px 0}
+.multi-channel-list{display:grid;gap:12px;margin:15px 0}
+.multi-channel{background:#0b2130;border:1px solid #375366;border-radius:16px;padding:15px;transition:border-color .18s}
+.multi-channel.active{border-color:#4f987e}
+.multi-channel.focused{outline:2px solid #5bcfa5;outline-offset:2px}
+.group-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.group-title{font-size:19px;font-weight:800;line-height:1.3;overflow-wrap:anywhere}
+.group-subtitle{font-size:12px;color:var(--muted);margin-top:2px}
+.group-status{font-size:11px;color:#d5e6eb;background:#294457;padding:6px 9px;border-radius:30px;white-space:nowrap}
+.group-status.online{color:#b5f9d7;background:#164b3a}
+.group-status.warning{color:#ffda9a;background:#584728}
+.group-signal{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:12px 0;border-top:1px solid #29485a;padding-top:12px}
+.on-air{font-size:13px;color:#bdd6dd;flex:1;overflow-wrap:anywhere}
+.on-air strong{color:#fff}
+.group-action-row{display:grid;grid-template-columns:1fr 1fr 1.1fr 1fr;gap:8px}
+.group-action-row button{padding:12px 7px;border-radius:10px;font-size:13px}
+.small-ptt{background:var(--accent);color:#073022;border:0;touch-action:none;user-select:none;-webkit-user-select:none;font-weight:900}
+.small-ptt.sending{background:#f4b475;color:#201307}
+.small-ptt:disabled{background:#637a82;color:#233f48}
+.group-extra{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px 12px;margin-top:11px}
+.group-extra button{border:0;background:transparent;color:#bde3e5;text-decoration:underline;padding:4px;font-size:12px}
+.monitor-label{display:flex;align-items:center;gap:7px;color:#dcecf0;font-size:13px;cursor:pointer}
+.monitor-label input{width:18px;height:18px;accent-color:var(--accent);flex:none}
+.group-people{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.group-person{font-size:11px;border-radius:20px;background:#224458;color:#e0f1f5;padding:4px 9px;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.group-person.on-air-person{background:#285541;color:#a5ffd8}
+.group-muted{opacity:.78}
+.group-muted .group-signal{opacity:.8}
+.group-count{font-size:12px;color:#a8d6d0;font-weight:800}
+.multi-toolbar{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}
+.multi-toolbar .secondary{font-size:12px;flex:1;white-space:nowrap;padding:11px 7px}
+.quick-panel{background:linear-gradient(120deg,#102f3b,#0f2636)}
+.quick-controls{display:flex;gap:25px;align-items:center;padding:9px 0 0}
+.compact-talk{height:162px;width:162px;min-width:162px;box-shadow:0 0 0 8px #1c4944,0 0 0 15px #163841}
+.compact-talk:disabled{box-shadow:0 0 0 8px #1b3840,0 0 0 15px #15303c}
+.compact-talk span{font-size:12px}
+.quick-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:9px}
+.quick-info strong{font-size:23px;overflow-wrap:anywhere}
+.quick-info p{margin:0}
+.counter{font-size:12px;color:#b2d8c8}
+.backup-links{display:flex;flex-wrap:wrap;gap:15px;margin:12px 0 0}
+.backup-links a{font-size:12px;color:#b1dfef}
+.group-msg{font-size:11px;color:#c0d9dc;margin:8px 0 0;line-height:1.4}
+.multi-app .colors{margin-bottom:9px}
+@media(max-width:500px){.multi-app .settings-grid{grid-template-columns:1fr}.quick-controls{gap:20px}.compact-talk{height:135px;width:135px;min-width:135px}.quick-info strong{font-size:19px}.group-action-row{grid-template-columns:repeat(4,1fr);gap:5px}.group-action-row button{font-size:12px;padding:13px 3px}.multi-app .card{padding:15px}.multi-toolbar .secondary{min-width:0}.group-extra{gap:3px 9px}}
+@media(max-width:350px){.compact-talk{height:118px;width:118px;min-width:118px}.group-action-row{grid-template-columns:1fr 1fr}.quick-controls{gap:18px}}
+
+@media(max-width:520px){.multi-toolbar{display:grid;grid-template-columns:1fr 1fr}}
+
+/* V6 fixed-channel selectors: ten identical channels on every device. */
+.channel-select-label{display:flex!important;align-items:center;gap:11px;margin:0!important;cursor:pointer}
+.channel-select-label input[type=checkbox]{width:23px;height:23px;min-width:23px;margin:0;accent-color:var(--accent);cursor:pointer}
+.channel-select-label .group-title{font-size:20px}
+.group-action-row{grid-template-columns:1fr 1.6fr 1fr}
+.multi-channel .monitor-label:has(input:disabled){opacity:.5;cursor:not-allowed}
+.multi-channel .monitor-label input:disabled{cursor:not-allowed}
+.group-subtitle{padding-left:34px}
+@media(max-width:350px){.group-action-row{grid-template-columns:1fr 1fr 1fr}.group-action-row button{font-size:11px}}
+
+/* Connection troubleshooting / V6.1 */
+.radio-diag{margin-block:12px}
+.radio-diag summary{display:flex;gap:10px;align-items:center;justify-content:space-between;cursor:pointer;list-style:none;padding:5px 0}
+.radio-diag summary::-webkit-details-marker{display:none}
+.radio-diag summary:after{content:"▾";font-size:20px;color:#9ad5d2}
+.radio-diag[open] summary:after{content:"▴"}
+.radio-diag .secondary-text{font-size:11px;line-height:1.5}
+.diag-log{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px;line-height:1.5;max-height:290px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#081521;border-radius:9px;border:1px solid #375266;color:#c9e5e7;padding:13px;margin:10px 0 0}
+.radio-diag .multi-toolbar .secondary{white-space:normal}
+
+/* V6.2: estimated WebRTC data usage and reversible compact radio layout. */
+.data-usage-panel{padding-top:15px!important;padding-bottom:15px!important}
+.data-usage-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.data-usage-cell{display:flex;flex-direction:column;gap:5px;min-width:0;background:#0c2433;border:1px solid #274659;border-radius:12px;padding:12px}
+.data-amount{font-size:25px;line-height:1.15;font-variant-numeric:tabular-nums;color:#d4f9ed;overflow-wrap:anywhere}
+.data-usage-cell .small{font-size:11px;white-space:normal;overflow-wrap:anywhere}
+.data-meter-bottom{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:10px}
+.data-meter-bottom .small{font-size:11px;line-height:1.4}
+.data-meter-bottom button{flex-shrink:0;padding:8px 10px}
+.layout-switcher{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 12px}
+.layout-switch-buttons{display:flex;gap:4px}
+.layout-switch-buttons button{padding:8px 12px;font-size:12px}
+.layout-switch-buttons button[aria-pressed="true"]{color:#08372c;background:#6de2b6;border-color:#7fefd0;font-weight:800}
+
+/* Compact mode keeps the talk button, speaker activity, and independent monitor switch visible. */
+body.radio-compact .multi-channel-list{gap:5px;margin:7px 0}
+body.radio-compact .multi-channel{padding:8px 10px;border-radius:10px;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"head head" "signal signal" "actions extra";column-gap:8px;row-gap:3px}
+body.radio-compact .group-head{grid-area:head;align-items:center;gap:6px}
+body.radio-compact .group-title{font-size:15px!important;line-height:1.2}
+body.radio-compact .group-subtitle{font-size:10px;margin-top:0}
+body.radio-compact .channel-select-label{gap:7px}
+body.radio-compact .channel-select-label input{width:19px;height:19px;min-width:19px}
+body.radio-compact .group-subtitle{padding-left:26px}
+body.radio-compact .group-status{font-size:10px;padding:3px 7px}
+body.radio-compact .group-signal{grid-area:signal;gap:6px;min-height:17px;padding:0;margin:0;border:0}
+body.radio-compact .on-air{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.radio-compact .group-count{font-size:10px}
+body.radio-compact .group-action-row{grid-area:actions;grid-template-columns:0.85fr 1.4fr .8fr;gap:5px}
+body.radio-compact .group-action-row button{font-size:12px;padding:9px 3px;min-height:40px;border-radius:8px}
+body.radio-compact .group-extra{grid-area:extra;align-items:center;justify-content:flex-end;margin:0;gap:0}
+body.radio-compact .monitor-label{gap:4px;font-size:10px;line-height:1.2}
+body.radio-compact .monitor-label input{width:17px;height:17px}
+body.radio-compact .group-people,body.radio-compact .group-msg{display:none}
+@media(max-width:400px){
+ .data-usage-grid{gap:6px}
+ .data-usage-cell{padding:9px}
+ .data-amount{font-size:20px}
+ body.radio-compact .multi-channel{padding:7px}
+ body.radio-compact .group-action-row button{font-size:11px}
+ body.radio-compact .monitor-label{font-size:10px}
+}
+
+/* V6.3: Basic / Advanced shared-channel radio mode picker. */
+.radio-mode-picker{padding:11px 12px;margin:7px 0 12px;border:1px solid #31596a;border-radius:12px;background:#0b2231}
+.radio-mode-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:9px}
+.radio-mode-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.radio-mode-buttons .secondary{min-height:60px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:9px 7px;border:1px solid #36566b;border-radius:10px}
+.radio-mode-buttons strong{font-size:16px}
+.radio-mode-buttons span{font-size:11px;opacity:.8}
+.radio-mode-buttons [aria-pressed="true"]{background:#64dfb1;color:#052b21;border-color:#88f3c8}
+.radio-mode-buttons [aria-pressed="true"] span{opacity:1}
+.multi-channel.hidden{display:none!important}
+
+/* V6.4 handheld radio: one live LCD; underlying joined audio rooms never cycle. */
+.handheld-radio{padding:15px!important;background:linear-gradient(155deg,#172e3c,#0d1b29 60%,#0a2027);border:1px solid #315d64;box-shadow:inset 0 1px 0 #3b5c62}
+.handheld-topline{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.radio-scan-led{font-size:10px;font-weight:900;letter-spacing:1px;padding:7px 10px;border:1px solid #375262;border-radius:20px;color:#d2dce7;background:#152b36}
+.radio-housing{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:13px;align-items:stretch;border:1px solid #3a5d69;border-radius:20px;background:linear-gradient(145deg,#1d3542,#0b1b2a);padding:12px;box-shadow:inset 0 2px 4px #071925}
+.radio-center-console{order:1;min-width:0;display:flex;flex-direction:column;gap:9px}
+.radio-side-ptt{order:2;display:flex;flex-direction:column;justify-content:space-evenly;align-items:center;gap:8px;text-align:center}
+.radio-housing.left-handed{grid-template-columns:112px minmax(0,1fr)}
+.radio-housing.left-handed .radio-side-ptt{order:1}
+.radio-housing.left-handed .radio-center-console{order:2}
+.handheld-ptt{width:98px;height:164px;min-width:0;min-height:0;border-radius:48px;background:linear-gradient(155deg,#67e0b4,#3d9f86);border:3px solid #b5f2da;color:#052f28;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;box-shadow:0 0 0 4px #183b40,0 5px 15px #061a22;touch-action:none;user-select:none;-webkit-user-select:none}
+.handheld-ptt:disabled{background:linear-gradient(155deg,#425b67,#31454e);color:#adc5c7;border-color:#607c85;box-shadow:0 0 0 4px #18343b;opacity:.74}
+.handheld-ptt span{font-size:12px;font-weight:1000;line-height:1.25;max-width:78px}
+.handheld-ptt:not(:disabled):active{background:#f6bd84;color:#28180a;transform:translateY(2px)}
+.radio-ptt-target{font-size:10px;color:#d6f6f3;line-height:1.3;letter-spacing:.15px}
+.radio-lcd{background:linear-gradient(155deg,#071e1c,#143c39);border:3px solid #316d6b;border-radius:11px;box-shadow:inset 0 0 19px #061b1c,0 1px 0 #57717b;padding:13px 12px;color:#c1f7de;min-height:222px;display:flex;flex-direction:column;gap:5px;overflow-wrap:anywhere}
+.radio-lcd:focus-visible{outline:2px solid #a7ecce;outline-offset:3px}
+.radio-lcd-top{display:flex;justify-content:space-between;gap:7px;font-size:9px;letter-spacing:.6px;font-weight:800;color:#8ad0b7}
+.radio-lcd-top span{white-space:nowrap}
+.radio-lcd-channel{display:flex;align-items:center;justify-content:space-between;margin-top:5px}
+#screenChannelNumber{font-size:clamp(33px,9vw,50px);font-weight:900;line-height:1.02;letter-spacing:1px;font-variant-numeric:tabular-nums}
+.radio-lcd-icon{font-size:10px;border:1px solid #6cab96;border-radius:5px;padding:4px 5px}
+#screenChannelTitle{font-size:17px;line-height:1.15;color:#eefded;overflow-wrap:anywhere}
+.radio-lcd-caption{display:none}
+.radio-lcd-line{display:flex;align-items:center;justify-content:space-between;gap:5px;margin-top:5px;font-size:11px}
+.radio-lcd-line .status-badge{padding:4px 8px;font-size:10px}
+.radio-lcd-onair{margin-top:auto;border-top:1px solid #2a635b;padding-top:9px;display:flex;flex-direction:column;gap:4px}
+.radio-lcd-onair strong{font-size:15px;line-height:1.2;color:#f5fcf4;min-height:18px;overflow-wrap:anywhere}
+.radio-lcd.receiving{border-color:#f5bd78;box-shadow:inset 0 0 22px #3c3821,0 0 0 1px #f5bd78}
+.radio-lcd.receiving #screenScan{color:#ffc87c}
+.radio-lcd.scanning #screenScan{color:#7ff0b7}
+.radio-lcd.transmitting{border-color:#f5b181}
+.radio-navigation{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+.radio-navigation button,.radio-secondary-actions button{min-height:48px;padding:8px 4px;font-size:12px;font-weight:800;border-radius:10px}
+.radio-navigation button{display:flex;align-items:center;justify-content:center;gap:4px}
+.radio-secondary-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.radio-secondary-actions button{min-height:41px;font-size:11px}
+.radio-secondary-actions [aria-pressed="true"]{background:#225a4d;border-color:#6bca9e;color:#d9faec}
+.radio-preferences{display:flex;flex-direction:column;gap:4px;margin:10px 0 4px}
+.handedness-picker{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.handedness-picker button{font-size:12px;padding:7px 15px;min-width:60px}
+.handedness-picker [aria-pressed="true"]{background:#6fe3b5;color:#052f25;font-weight:900}
+#focusHint{margin:7px 0 0;font-size:11px}
+#radioScreenMessage{margin:7px 0 0;font-size:11px}
+.handheld-radio .radio-mode-picker{margin-top:10px}
+.radio-manager-summary{cursor:pointer;list-style:none;margin:0}
+.radio-manager-summary::-webkit-details-marker{display:none}
+.radio-manager-summary:after{content:"▾";font-size:18px;color:#b2e3dd}
+.channel-overview[open] .radio-manager-summary:after{content:"▴"}
+.channel-overview[open] .radio-manager-summary{margin-bottom:14px}
+@media(max-width:470px){
+ .handheld-radio{padding:12px!important}
+ .radio-housing{grid-template-columns:minmax(0,1fr) 86px;gap:9px;padding:9px;border-radius:15px}
+ .radio-housing.left-handed{grid-template-columns:86px minmax(0,1fr)}
+ .handheld-ptt{width:76px;height:142px;border-width:2px;gap:8px}
+ .handheld-ptt svg{width:31px;height:31px}
+ .handheld-ptt span{font-size:10px;max-width:63px}
+ .radio-ptt-target{font-size:9px}
+ .radio-lcd{padding:10px 9px;min-height:205px}
+ #screenChannelTitle{font-size:15px}
+ .radio-lcd-onair strong{font-size:13px}
+ .radio-navigation button{min-height:42px;font-size:11px}
+ .radio-navigation button span{font-size:10px}
+ .radio-secondary-actions button{min-height:40px;font-size:10px}
+}
+@media(max-width:345px){
+ .radio-housing{grid-template-columns:minmax(0,1fr) 72px;gap:7px;padding:7px}
+ .radio-housing.left-handed{grid-template-columns:72px minmax(0,1fr)}
+ .handheld-ptt{width:65px;height:126px}
+ .radio-side-ptt>.micro-label{font-size:9px}
+ .radio-ptt-target{font-size:8px}
+ .radio-lcd-top{font-size:8px}
+}
+
+/* V6.5: optional voice transcripts stay visually independent of live radio. */
+.radio-transcripts{padding-top:17px!important;padding-bottom:15px!important}
+.radio-transcripts .section-heading{align-items:center}
+.radio-transcripts .secondary-text{font-size:11px;white-space:nowrap}
+.transcript-settings{display:flex;flex-wrap:wrap;gap:8px 18px;margin:9px 0 7px}
+.transcript-settings .setting-toggle{display:flex;align-items:center;gap:8px;margin:0;font-size:13px;line-height:1.4}
+.transcript-settings input{width:18px;height:18px;flex-shrink:0;accent-color:var(--accent)}
+#transcriptStatus{margin:8px 0 10px;font-size:12px;line-height:1.45}
+.transcript-log{height:230px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;border:1px solid #37606a;border-radius:12px;background:#091b27;padding:11px;display:flex;flex-direction:column;gap:10px}
+.transcript-empty{font-size:13px;color:#a5c9d0;text-align:center;margin:auto;padding:12px}
+.transcript-entry{max-width:96%;padding:9px 11px;border:1px solid #294c5a;border-radius:11px;background:#112b39;align-self:flex-start;min-width:0}
+.transcript-entry.tx{align-self:flex-end;background:#153c35;border-color:#397862}
+.transcript-meta{display:flex;align-items:center;flex-wrap:wrap;gap:3px 9px;font-size:11px;line-height:1.3}
+.transcript-meta strong{color:#d4f9eb;overflow-wrap:anywhere}
+.transcript-meta span{color:#a5bdca;font-size:10px}
+.transcript-entry p{font-size:13px;color:#f0f8f6;line-height:1.45;margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.transcript-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
+.transcript-toolbar button{font-size:12px;padding:9px;border-radius:9px}
+.transcript-notice{font-size:11px!important;line-height:1.4;margin:12px 0 0!important}
+@media(max-width:410px){
+ .transcript-settings{flex-direction:column;gap:9px}
+ .radio-transcripts .section-heading{gap:8px}
+ .transcript-log{height:215px;padding:9px}
+ .transcript-entry{max-width:98%}
+}
+
+/* V6.5: non-modal transcript pop-up. Avoid covering the main PTT by positioning near the bottom. */
+.radio-top-actions{display:flex;align-items:center;gap:7px}
+.radio-text-button{padding:7px 13px!important;font-size:12px!important;font-weight:800}
+.transcript-popup{position:fixed;z-index:80;bottom:calc(12px + env(safe-area-inset-bottom,0px));right:12px;width:min(380px,calc(100vw - 24px));max-height:min(310px,48vh);display:flex;flex-direction:column;border:1px solid #72c9ab;background:#102a35;color:#e9fbf6;border-radius:15px;box-shadow:0 8px 40px #06121bd9}
+.transcript-popup-head{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;gap:8px;border-bottom:1px solid #365967}
+.transcript-popup-head strong{font-size:13px}
+.transcript-popup-head button{font-size:12px;padding:6px 12px}
+.transcript-popup-messages{min-height:75px;max-height:255px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:10px 12px;display:flex;flex-direction:column;gap:10px}
+.transcript-popup-line{border-left:3px solid #5c91a7;padding-left:8px}
+.transcript-popup-line.tx{border-left-color:#62c89e}
+.transcript-popup-line strong{color:#bce7d6;font-size:10px;line-height:1.4;display:block;overflow-wrap:anywhere}
+.transcript-popup-line p{color:#f1fbf8;line-height:1.35;font-size:13px;margin:4px 0 0;overflow-wrap:anywhere}
+@media(max-width:480px){
+ .transcript-popup{width:min(350px,calc(100vw - 18px));right:9px;bottom:calc(9px + env(safe-area-inset-bottom,0px));max-height:42vh}
+ .transcript-popup-messages{max-height:180px}
+ .radio-text-button{padding:6px 9px!important}
+}
+
+/* V6.6 speech-specific diagnostics and local recognizer test. */
+.speech-diagnostics{margin-top:14px;padding:12px;border:1px solid #355666;border-radius:10px;background:#0b2331}
+.speech-diagnostics summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none}
+.speech-diagnostics summary::-webkit-details-marker{display:none}
+.speech-diagnostics summary strong{font-size:13px}
+.speech-diagnostics summary .secondary-text{font-size:11px;text-align:right}
+.speech-diagnostics>p{margin:10px 0;line-height:1.5}
+.speech-diag-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.speech-diag-actions button{padding:10px 7px;min-height:44px;font-size:12px;white-space:normal}
+#speechTestPreview{border-left:3px solid #537d88;padding:7px 10px;background:#102d3b;overflow-wrap:anywhere}
+#speechDiagSummary{font-size:12px;color:#b8e6da}
+.speech-diagnostics .diag-log{max-height:210px;margin-top:11px}
+@media(max-width:355px){.speech-diag-actions{grid-template-columns:1fr}}
+
+/* V6.7 opt-in shared-microphone Whisper controls. */
+.local-asr-controls{margin:10px 0 12px;padding:12px;border:1px solid #36596a;background:#0c2533;border-radius:11px;display:flex;flex-direction:column;gap:8px}
+.local-asr-controls label{font-size:12px;font-weight:800;color:#c9e9e7}
+.local-asr-controls select{width:100%;min-height:43px;border-radius:8px;font-size:13px;padding:9px;background:#173447;color:#f2f9f8;border:1px solid #4b7380}
+.local-asr-controls button{min-height:44px;font-size:13px;white-space:normal;padding:10px}
+.local-asr-controls button:disabled{opacity:.65}
+.local-asr-controls p{margin:0;font-size:11px;line-height:1.5}
+#asrState{color:#a6eed2}
