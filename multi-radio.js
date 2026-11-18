@@ -896,15 +896,17 @@ function playTone(kind){
     const ctx=alertContext;
     if(!ctx || ctx.state!=='running')return;
     const start=ctx.currentTime+0.02;
-    const bursts=kind==='call'?[{at:0,len:0.24,hz:960},{at:.32,len:.24,hz:960}]:[{at:0,len:.18,hz:880}];
+    const bursts=kind==='call'?[{at:0,len:0.24,hz:960},{at:.32,len:.24,hz:960}]:
+      kind==='ready'?[{at:0,len:.095,hz:1180}]:[{at:0,len:.18,hz:880}];
     for(const b of bursts){
       const osc=ctx.createOscillator(),gain=ctx.createGain();
-      osc.type=kind==='call'?'sine':'square';
+      osc.type=kind==='call'||kind==='ready'?'sine':'square';
       osc.frequency.setValueAtTime(b.hz,start+b.at);
       if(kind==='squawk')osc.frequency.exponentialRampToValueAtTime(530,start+b.at+b.len);
+      const volume=kind==='ready'?.06:.11;
       gain.gain.setValueAtTime(.001,start+b.at);
-      gain.gain.linearRampToValueAtTime(.11,start+b.at+.018);
-      gain.gain.setValueAtTime(.11,start+b.at+b.len-.04);
+      gain.gain.linearRampToValueAtTime(volume,start+b.at+.018);
+      gain.gain.setValueAtTime(volume,start+b.at+b.len-.04);
       gain.gain.exponentialRampToValueAtTime(.001,start+b.at+b.len);
       osc.connect(gain);gain.connect(ctx.destination);
       osc.start(start+b.at);osc.stop(start+b.at+b.len+.01);
