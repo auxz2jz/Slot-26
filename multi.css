@@ -265,3 +265,10 @@ body.radio-compact .group-people,body.radio-compact .group-msg{display:none}
 .local-asr-controls button:disabled{opacity:.65}
 .local-asr-controls p{margin:0;font-size:11px;line-height:1.5}
 #asrState{color:#a6eed2}
+
+/* V6.8 optional hardware microphone release while preserving silent WebRTC links */
+.ptt-mic-setting{margin:12px 0;padding:12px;border:1px solid #355769;border-radius:11px;background:#102a39;display:flex;flex-direction:column;gap:7px}
+.ptt-mic-setting label{display:flex;gap:10px;align-items:center;font-size:13px;line-height:1.4}
+.ptt-mic-setting label input{width:19px;height:19px;flex-shrink:0;accent-color:#3ecea2}
+.ptt-mic-setting p{margin:0;line-height:1.45;font-size:11px}
+#micModeStatus{font-weight:700;color:#a9ead3}
