@@ -286,3 +286,14 @@ body.radio-compact .group-people,body.radio-compact .group-msg{display:none}
 .handheld-ptt:not(:disabled){background:linear-gradient(155deg,#365064,#263b49);border-color:#6f8ca2;color:#d6e6f3;box-shadow:0 0 0 4px #203b49,0 5px 15px #061a22}
 .handheld-ptt.tx-pending:not(:disabled){background:#9a661d;border-color:#ffd083;color:#fff2cb}.handheld-ptt.tx-live:not(:disabled){background:#b32738;border-color:#ff9ba3;color:#fff;box-shadow:0 0 0 4px #7b2836,0 0 22px #e84d6280}
 .radio-lcd.transmitting{border-color:#ff7781;box-shadow:inset 0 0 22px #742b36,0 0 0 1px #ff7781}.radio-lcd.transmitting #screenScan{color:#ff9ba3}
+
+/* V6.15: finished controls and clear separation of development tools. */
+.radio-quick-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:10px 0 14px}
+.radio-quick-controls button{min-height:48px;padding:8px 5px;font-size:12px;line-height:1.3;white-space:normal;overflow-wrap:normal}
+.radio-quick-controls button[data-state=on]{background:#174937;color:#c7f7d7;border-color:#53c68a}
+.radio-quick-controls button[data-state=pending]{background:#63481c;color:#ffdda1;border-color:#e8ae53}
+.radio-quick-controls p{grid-column:1/-1;margin:0;font-size:11px;overflow-wrap:anywhere}
+.testing-divider{border-top:3px solid #e8ae53;border-bottom:1px solid #71562c;padding:15px 10px;margin:26px 0 12px;display:flex;flex-direction:column;gap:5px;background:#372d1e;color:#ffdda1;text-align:center}
+.testing-divider strong{font-size:14px;letter-spacing:.07em}
+.testing-divider span{font-size:12px;line-height:1.4}
+@media(max-width:380px){.radio-quick-controls{grid-template-columns:1fr}.radio-quick-controls button{min-height:42px}}
