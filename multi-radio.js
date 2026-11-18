@@ -947,7 +947,9 @@ const MICROPHONE_CONSTRAINTS={
   video:false
 };
 function micStateSummary(){
-  if(!pttOnlyMicrophone)return 'Always ready: microphone held open but muted while idle.';
+  if(!pttOnlyMicrophone)return microphone?.getAudioTracks?.()[0]?.readyState==='live'?
+    'Always ready: microphone open, muted until authorized Talk.':
+    'Always ready: microphone will open when joining a channel.';
   const active=[...sessions.values()].find(s=>s.pttMode&&s.pttInputStream);
   const waiting=[...sessions.values()].find(s=>s.pttMode&&s.pttMicPending);
   return active?'PTT only: microphone ON while Talk is held.':
@@ -1206,7 +1208,14 @@ document.addEventListener('visibilitychange',()=>{
   if(!document.hidden)for(const s of sessions.values())s.reconnectSignaling();
 });
 window.addEventListener('online',()=>{for(const s of sessions.values())s.reconnectSignaling();});
-window.addEventListener('pagehide',()=>{endSpeechCapture();void sampleDataUsage();if(selectedTx)releaseTalk(selectedTx);for(const s of sessions.values())s.stop();});
+window.addEventListener('pagehide',()=>{
+  endSpeechCapture();void sampleDataUsage();
+  if(selectedTx)releaseTalk(selectedTx);
+  for(const s of sessions.values())s.stop();
+  sessions.clear();
+  releaseMicrophoneIfUnused();
+  closeStandbyAudioIfUnused();
+});
 
 class ChannelSession{
   constructor(publicRoom,effectiveId,track,stream,monitor){
