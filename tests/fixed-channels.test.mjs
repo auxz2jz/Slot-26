@@ -781,7 +781,7 @@ test('V6.9: ready cue can be disabled; still only capture after activation and s
 });
 
 function learnHardware(a){
-  a.ui.hardwareLearn.listeners.click[0]();a.fireWindow('keydown');a.fireWindow('keyup');
+  a.ui.hardwareLearn.listeners.click[0]();a.fireWindow('keydown',{timeStamp:100});a.fireWindow('keyup',{timeStamp:1100});
   assert.match(a.ui.hardwareStatus.textContent,/Verified F8/);
   a.ui.hardwareBind.listeners.click[0]();a.ui.hardwareEnabled.checked=true;
   a.ui.hardwareEnabled.listeners.change[0]();
@@ -789,9 +789,9 @@ function learnHardware(a){
 test('V6.10: detect without transmitting, opt in, and hold/release hardware button',async()=>{
   const room=presets.CHANNEL_PRESETS[0];const a=browser('USB PTT',[]);
   await a.joinChannel(room);flush();const s=a.sessions.get(room.id);
-  a.ui.hardwareLearn.listeners.click[0]();a.fireWindow('keydown');flush();
+  a.ui.hardwareLearn.listeners.click[0]();a.fireWindow('keydown',{timeStamp:100});flush();
   assert.equal(s.transmitting,false);assert.equal(a.ui.hardwareBind.disabled,true);
-  a.fireWindow('keyup');flush();assert.equal(s.transmitting,false);assert.equal(a.ui.hardwareBind.disabled,false);
+  a.fireWindow('keyup',{timeStamp:1100});flush();assert.equal(s.transmitting,false);assert.equal(a.ui.hardwareBind.disabled,false);
   a.ui.hardwareBind.listeners.click[0]();a.fireWindow('keydown');flush();
   assert.equal(s.transmitting,false);a.fireWindow('keyup');
   a.ui.hardwareEnabled.checked=true;a.ui.hardwareEnabled.listeners.change[0]();
@@ -805,9 +805,9 @@ test('V6.10: detect without transmitting, opt in, and hold/release hardware butt
 test('V6.10: unmatched keyup cannot teach a button; blur fails closed',async()=>{
   const room=presets.CHANNEL_PRESETS[0];const a=browser('USB safety',[]);
   await a.joinChannel(room);flush();const s=a.sessions.get(room.id);
-  a.ui.hardwareLearn.listeners.click[0]();a.fireWindow('keydown');
-  a.fireWindow('keyup',{key:'F9',code:'F9'});assert.equal(a.ui.hardwareBind.disabled,true);
-  a.fireWindow('keyup');a.ui.hardwareBind.listeners.click[0]();
+  a.ui.hardwareLearn.listeners.click[0]();a.fireWindow('keydown',{timeStamp:100});
+  a.fireWindow('keyup',{key:'F9',code:'F9',timeStamp:900});assert.equal(a.ui.hardwareBind.disabled,true);
+  a.fireWindow('keyup',{timeStamp:1100});a.ui.hardwareBind.listeners.click[0]();
   a.ui.hardwareEnabled.checked=true;a.ui.hardwareEnabled.listeners.change[0]();
   a.fireWindow('keydown',{target:{tagName:'INPUT'}});flush();assert.equal(s.transmitting,false);
   a.fireWindow('keydown');flush();assert.equal(s.transmitting,true);
@@ -821,4 +821,14 @@ test('V6.10: physical release stops PTT-only microphone',async()=>{
   a.fireWindow('keydown');await Promise.resolve();flush();assert.equal(s.transmitting,true);
   assert.equal(a.mediaRequests.length,1);a.fireWindow('keyup');flush();
   assert.equal(s.transmitting,false);assert.equal(a.mediaRequests[0].readyState,'ended');a.leaveChannel(room.id);
+});
+
+test('V6.10: immediate media tap pairs cannot be mistaken for held PTT',()=>{
+  const a=browser('Short media click',[]);
+  a.ui.hardwareLearn.listeners.click[0]();
+  a.fireWindow('keydown',{key:'MediaPlayPause',code:'',timeStamp:100});
+  a.fireWindow('keyup',{key:'MediaPlayPause',code:'',timeStamp:101});
+  assert.equal(a.ui.hardwareBind.disabled,true);
+  assert.match(a.hardwareDiagnosticReport(),/TEST HOLD TOO SHORT/);
+  a.ui.hardwareLearn.listeners.click[0]();
 });

@@ -1245,7 +1245,8 @@ function releaseTalk(s){
 /* V6.10: browser-exposed hardware keyboard/HID-style down/up events only.
  * Learning never transmits. Outside explicit learning, ignore unbound keys.
  */
-const EXTERNAL_HOLD_LIMIT=45000,EXTERNAL_TEST_LIMIT=20000;
+const EXTERNAL_HOLD_LIMIT=45000,EXTERNAL_TEST_LIMIT=20000,EXTERNAL_MIN_TEST_HOLD=250;
+const externalEventTime=e=>Number.isFinite(e?.timeStamp)?e.timeStamp:Date.now();
 const externalLabel=b=>b?b.replace(/^(code|key):/,''):'none';
 function renderExternalPTT(){
   if(ui.hardwareLearn)ui.hardwareLearn.textContent=externalLearning?'Stop detection':'Detect button';
@@ -1285,7 +1286,7 @@ function startExternalDetection(){
   externalCounts.testDown=0;externalCounts.testUp=0;externalCounts.unknown=0;
   externalMessage='Listening for the physical button for 20 seconds. No radio transmission.';
   ui.hardwareLearn?.blur?.();
-  externalEvent('DETECTION START','Press and release the headset button');
+  externalEvent('DETECTION START','Hold the headset button for one second, then release');
   externalLearnTimer=setTimeout(()=>{
     finishExternalDetection(externalCounts.testDown?'No matching release reached Chrome. This button cannot be safely bound.':'No button press reached Chrome. Android may be intercepting it.');
     externalEvent('DETECTION TIMEOUT','No verified press/release pair');
@@ -1315,7 +1316,7 @@ function externalKeyDown(e){
     if(!sig){if(e.key==='Unidentified'||!e.code){externalCounts.unknown++;externalEvent('UNKNOWN DOWN','No usable button identity');}return;}
     consumeHardwareKey(e);
     if(externalDown)return;
-    externalDown=sig;externalPressedAt=Date.now();externalCounts.testDown++;
+    externalDown=sig;externalPressedAt=externalEventTime(e);externalCounts.testDown++;
     externalMessage='Press detected: '+externalLabel(sig)+'. Release now.';
     externalEvent('TEST PRESS',externalLabel(sig));return;
   }
@@ -1346,7 +1347,13 @@ function externalKeyUp(e){
     consumeHardwareKey(e);externalCounts.testUp++;
     externalEvent('TEST RELEASE',externalLabel(sig));
     if(externalDown===sig){
-      const held=Math.max(0,Date.now()-externalPressedAt);
+      const held=Math.round(Math.max(0,externalEventTime(e)-externalPressedAt));
+      if(held<EXTERNAL_MIN_TEST_HOLD){
+        externalDown=null;externalCandidate=null;
+        externalMessage='Only a '+held+' ms tap reached Chrome. Try holding the physical button for one second. Instantaneous media actions cannot be safely bound.';
+        externalEvent('TEST HOLD TOO SHORT',externalLabel(sig)+'; '+held+' ms');
+        return;
+      }
       externalCandidate=sig;
       finishExternalDetection('Verified '+externalLabel(sig)+': matching press AND release. Tap Use detected button.');
       externalEvent('VERIFIED BUTTON',externalLabel(sig)+'; held '+held+' ms');
