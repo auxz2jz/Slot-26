@@ -120,7 +120,7 @@ const environmentNames=[
   'URLSearchParams','Worker','setTimeout','clearTimeout','setInterval','clearInterval'
 ];
 const appFactory=new Function(...utilityNames,...environmentNames,source+
-  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,setTranscriptMode,loadLocalAsr,hardwareDiagnosticReport,setPTTOnlyMicrophone,getPTTOnlyMicrophone:()=>pttOnlyMicrophone,getAsrState:()=>asrState,getAsrStats:()=>asrStats,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
+  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,setTranscriptMode,loadLocalAsr,hardwareDiagnosticReport,diagnosticReport,setPTTOnlyMicrophone,getPTTOnlyMicrophone:()=>pttOnlyMicrophone,getAsrState:()=>asrState,getAsrStats:()=>asrStats,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
 const utilsForTest={
   ...utils,...presets,WebRTCUsageMeter,formatDataBytes,
   checkChannelPin:(channel,pin)=>presets.checkChannelPin(channel,pin,webcrypto),
@@ -178,7 +178,7 @@ function browser(name,rooms,speechSupported=true,options={}){
     }
   }
   class FakeAudioContext{
-    constructor(){this.state='running';this.currentTime=0;this.destination={};}
+    constructor(){this.state=options.delayedAudioResume?'suspended':'running';this.currentTime=0;this.destination={};}
     createOscillator(){return {
       type:'sine',
       frequency:{setValueAtTime(){},exponentialRampToValueAtTime(){}},
@@ -195,7 +195,7 @@ function browser(name,rooms,speechSupported=true,options={}){
     createMediaStreamSource(stream){
       return {stream,connect(dest){this.destination=dest;},disconnect(){this.destination=null;}};
     }
-    resume(){this.state='running';return Promise.resolve();}
+    resume(){if(options.delayedAudioResume)return Promise.resolve().then(()=>{this.state='running';});this.state='running';return Promise.resolve();}
     decodeAudioData(){
       const audio=new Float32Array(16000).fill(0.18);
       return Promise.resolve({sampleRate:16000,length:16000,numberOfChannels:1,
@@ -849,4 +849,31 @@ test('V6.13: always-ready shows ready muted separately from active transmit',asy
   a.startPTT(s);flush();assert.equal(a.ui.radioTxState.dataset.state,'sending');
   a.releaseTalk(s);flush();assert.equal(a.ui.radioMicState.dataset.state,'ready');assert.equal(a.ui.radioTxState.dataset.state,'off');
   assert.equal(a.mediaRequests.length,1);a.leaveChannel(room.id);
+});
+
+test('V6.14: beep test waits for suspended audio context without opening a microphone',async()=>{
+  const a=browser('Tone test',[],true,{pttMic:true,delayedAudioResume:true});
+  a.ui.testReadyCue.listeners.click[0]();
+  assert.equal(a.toneStarts.length,0);
+  for(let i=0;i<6;i++)await Promise.resolve();
+  assert.equal(a.toneStarts.length,1);
+  assert.equal(a.mediaRequests.length,0);
+  const report=a.diagnosticReport();
+  assert.match(report,/Relay One V6.14 global diagnostics/);
+  assert.match(report,/TONE REQUEST/);
+  assert.match(report,/TONE SCHEDULED/);
+  assert.match(report,/Tone requests: 1; scheduled: 1/);
+  assert.match(report,/--- Speech to text ---/);
+  assert.match(report,/--- External headset PTT ---/);
+});
+test('V6.14: always-ready mode plays one local ready cue and exports global TX state',async()=>{
+  const room=presets.CHANNEL_PRESETS[0],a=browser('Ready cue direct',[],true,{pttMic:true});
+  await a.joinChannel(room);flush();
+  const s=a.sessions.get(room.id);
+  a.startPTT(s);flush();
+  assert.equal(s.transmitting,true);
+  assert.equal(a.toneStarts.length,1);
+  assert.match(a.diagnosticReport(),/TRANSMIT READY/);
+  assert.match(a.diagnosticReport(),/outgoing track=live, enabled=true/);
+  a.releaseTalk(s);a.leaveChannel(room.id);
 });
