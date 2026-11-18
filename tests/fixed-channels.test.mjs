@@ -872,3 +872,22 @@ test('V6.11: toggle controls on-demand mic and stops it on second pulse, mode sw
   assert.equal(a.ui.hardwareEnabled.checked,false);assert.equal(a.ui.hardwareEnabled.disabled,true);
   a.leaveChannel(room.id);
 });
+
+test('V6.11: enabling checkbox focus does not swallow a media pulse and watchdog stops toggle',async()=>{
+  const room=presets.CHANNEL_PRESETS[0];const a=browser('Toggle safety timer',[]);
+  await a.joinChannel(room);flush();const s=a.sessions.get(room.id);learnToggle(a);
+  a.ui.hardwareTimeout.value='15';a.ui.hardwareTimeout.listeners.change[0]();
+  const props={key:'MediaPlayPause',code:'',target:{tagName:'INPUT',type:'checkbox'}};
+  a.fireWindow('keydown',{...props,timeStamp:1000});a.fireWindow('keyup',{...props,timeStamp:1145});flush();
+  assert.equal(s.transmitting,true);
+  a.fireWindow('keydown',{...props,target:{tagName:'INPUT',type:'text'},timeStamp:2000});
+  a.fireWindow('keyup',{...props,timeStamp:2145});flush();
+  assert.equal(s.transmitting,false,'second pulse stops even in a text field');
+  mediaPulse(a,3000);assert.equal(s.transmitting,true);
+  const timer=[...jobs.entries()].filter(([id])=>!queue.includes(id)).at(-1);
+  assert.ok(timer,'watchdog scheduled');
+  timer[1]();flush();
+  assert.equal(s.transmitting,false,'watchdog releases transmission');
+  assert.match(a.hardwareDiagnosticReport(),/Safety timeouts: 1/);
+  a.leaveChannel(room.id);
+});

@@ -1226,17 +1226,18 @@ function startPTT(s){
 }
 function releaseTalk(s){
   if(!s)return;
+  const externalStopCue=externalSession===s&&externalMode==='toggle'&&externalCue;
   if(externalSession===s){
     clearExternalSession(s);externalCounts.release++;
     externalMessage='External transmission stopped.';
     externalEvent('EXTERNAL PTT RELEASE','Radio released');
-    if(externalMode==='toggle'&&externalCue)playTone('toggle-stop');
   }
   if(s.pttMode && !s.transmitting){
     pttTiming.cancelledBeforeReady++;
     speechEvent('PTT ENDED BEFORE READY','release without active transmission');
   }
   s.wantTalk=false;endSpeechCapture(s);s.disableTransmit();
+  if(externalStopCue)playTone('toggle-stop');
   speechStats.lastPTT='released '+s.room.title;
   speechEvent('PTT RELEASED','voice track disabled');
   logRadio('PTT RELEASED',s.room.title);
@@ -1287,7 +1288,10 @@ function changeExternalMode(mode){
   externalEvent('MODE CHANGED',mode);
 }
 function editableKeyTarget(target){
-  return Boolean(target?.isContentEditable||target?.closest?.('input,textarea,select,[contenteditable="true"]')||['INPUT','TEXTAREA','SELECT'].includes(target?.tagName));
+  if(target?.isContentEditable)return true;
+  const field=target?.closest?.('input,textarea,select,[contenteditable="true"]')||target;
+  if(field?.tagName==='INPUT'&&['checkbox','radio','button','submit','range'].includes(field.type))return false;
+  return Boolean(field?.isContentEditable||['INPUT','TEXTAREA','SELECT'].includes(field?.tagName));
 }
 function hardwareSignature(e){
   if(e.isComposing||e.altKey||e.ctrlKey||e.metaKey||['Escape','Tab','Shift','Control','Alt','Meta','CapsLock'].includes(e.key))return null;
@@ -1334,8 +1338,11 @@ function setExternalEnabled(enabled){
   saveExternalPTT();externalMessage='';renderExternalPTT();
 }
 function externalKeyDown(e){
-  if(editableKeyTarget(e.target)||e.isComposing||e.defaultPrevented||document.hidden)return;
+  if(e.isComposing||e.defaultPrevented||document.hidden)return;
   const sig=hardwareSignature(e);
+  // Never block the bound stop signal because focus moved to a settings field.
+  const stopping=externalMode==='toggle'&&externalSession&&sig===externalBinding;
+  if(editableKeyTarget(e.target)&&!stopping)return;
   if(externalLearning){
     if(e.repeat)return;
     if(!sig){if(e.key==='Unidentified'||!e.code){externalCounts.unknown++;externalEvent('UNKNOWN DOWN','No usable button identity');}return;}
