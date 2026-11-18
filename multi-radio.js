@@ -995,10 +995,10 @@ async function preparePTTMicrophone(session){
   const epoch=++session.pttMicSerial;
   logRadio('PTT MIC REQUEST',session.room.title,'Opening physical microphone');
   // Must be requested directly from the PTT gesture, before awaiting signaling.
-  const work=navigator.mediaDevices.getUserMedia(MICROPHONE_CONSTRAINTS);
-  session.pttMicPending=work;
-  renderMicMode();
   try{
+    const work=navigator.mediaDevices.getUserMedia(MICROPHONE_CONSTRAINTS);
+    session.pttMicPending=work;
+    renderMicMode();
     const stream=await work;
     if(session.pttMicSerial!==epoch ||session.stopped || !session.wantTalk ||selectedTx!==session){
       stream.getTracks().forEach(track=>track.stop());
