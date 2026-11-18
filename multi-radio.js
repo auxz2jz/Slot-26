@@ -29,6 +29,7 @@ const ui = {
   prevChannel:$('prevChannel'),nextChannel:$('nextChannel'),
   radioJoin:$('radioJoin'),radioMonitor:$('radioMonitor'),radioCall:$('radioCall'),
   radioScan:$('radioScan'),leftHanded:$('leftHanded'),rightHanded:$('rightHanded'),
+  pttOnlyMicrophone:$('pttOnlyMicrophone'),micModeStatus:$('micModeStatus'),
   transcriptEnabled:$('transcriptEnabled'),transcriptKeep:$('transcriptKeep'),
   transcriptStatus:$('transcriptStatus'),transcriptLog:$('transcriptLog'),
   transcriptCount:$('transcriptCount'),transcriptCopy:$('transcriptCopy'),
@@ -46,6 +47,7 @@ const ACTIVE_KEY='relay-one.joined.v5';
 const LAYOUT_KEY='relay-one.layout.v6.2';
 const RADIO_MODE_KEY='relay-one.radio-mode.v6.3';
 const RADIO_SCAN_KEY='relay-one.scan.v6.4', RADIO_HAND_KEY='relay-one.ptt-side.v6.4';
+const PTT_MIC_MODE_KEY='relay-one.ptt-only-microphone.v6.8';
 const TRANSCRIPT_ENABLED_KEY='relay-one.transcribe.v6.5';
 const TRANSCRIPT_ENGINE_KEY='relay-one.transcript-engine.v6.7';
 const TRANSCRIPT_KEEP_KEY='relay-one.transcript-keep.v6.5';
@@ -154,6 +156,8 @@ ui.resetDataSaved?.addEventListener('click',()=>{
 renderDataUsage();
 setInterval(()=>{void sampleDataUsage();},4000);
 let focusedId=null, selectedTx=null, microphone=null, micPromise=null, alertContext=null;
+let pttOnlyMicrophone=storeGet(PTT_MIC_MODE_KEY,false)===true;
+let standbyAudioContext=null;
 // The center LCD may sweep through joined channels; PTT always has a fixed, visible target.
 let viewId=channels[0].id;
 let scanPreviewId=null, scanActivityId=null, scanLastOnAirAt=0, scanStepAt=0;
@@ -224,7 +228,7 @@ function speechDiagnosticReport(){
     s.room.title+': '+(s.track?.readyState||'no track')+', enabled='+Boolean(s.track?.enabled)+
     ', transmitting='+Boolean(s.transmitting)+', floor='+Boolean(s.floor===s.myId));
   return [
-    'Relay One V6.7 speech diagnostics',
+    'Relay One V6.8 speech diagnostics',
     'Transcription engine: '+transcriptMode,
     'On-device model state: '+asrState,
     'On-device recording active: '+Boolean(asrActive),
@@ -241,8 +245,11 @@ function speechDiagnosticReport(){
     'Speech enabled by user: '+transcriptEnabled,
     'Active recognition: '+Boolean(speechCapture),
     'Active local test: '+Boolean(speechTestCapture),
-    'Joined microphone streams: '+sessions.size,
-    'Note: joined channels keep microphone streams open even when not transmitting.',
+    'Microphone mode: '+(pttOnlyMicrophone?'PTT only':'always ready'),
+    'Physical microphone open: '+Boolean(pttOnlyMicrophone?
+      [...sessions.values()].some(s=>s.pttInputStream):
+      microphone?.getAudioTracks?.()[0]?.readyState==='live'),
+    'Joined audio sessions: '+sessions.size,
     'PTT held: '+Boolean(selectedTx),
     'PTT floor acquired: '+Boolean(selectedTx && selectedTx.floor===selectedTx.myId),
     'Last PTT: '+speechStats.lastPTT,
@@ -843,7 +850,8 @@ function diagnosticReport(){
       ', voice '+audio+'/'+peers.length+', ICE '+ice;
   });
   const data=usageMeter.snapshot();
-  return ['Relay One V6.7 connection diagnostics',
+  return ['Relay One V6.8 connection diagnostics',
+    'Microphone mode: '+(pttOnlyMicrophone?'PTT only':'always ready'),
     'Radio mode: '+radioMode,
     'Estimated WebRTC session: sent '+formatDataBytes(data.session.tx)+', received '+formatDataBytes(data.session.rx),
     'Estimated saved: sent '+formatDataBytes(data.saved.tx)+', received '+formatDataBytes(data.saved.rx),
@@ -927,10 +935,123 @@ ui.rxTone.addEventListener('change',()=>{profile.rxTone=ui.rxTone.checked;storeP
 ui.alertTone.addEventListener('change',()=>{profile.alertTone=ui.alertTone.checked;storeProfile();});
 // Fixed radio plan: ordinary users cannot create channels, modify PINs, or view admin settings.
 
+
+/* V6.8: The default retains the existing hot microphone track for lowest-latency
+ * PTT. Optional privacy mode maintains a live, silent WebRTC placeholder track
+ * while releasing the physical microphone completely between PTT presses.
+ * Connecting mic input through a Web Audio destination avoids renegotiating
+ * PeerJS calls, and Whisper still clones the active session output track.
+ */
+const MICROPHONE_CONSTRAINTS={
+  audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},
+  video:false
+};
+function micStateSummary(){
+  if(!pttOnlyMicrophone)return 'Always ready: microphone held open but muted while idle.';
+  const active=[...sessions.values()].find(s=>s.pttMode&&s.pttInputStream);
+  const waiting=[...sessions.values()].find(s=>s.pttMode&&s.pttMicPending);
+  return active?'PTT only: microphone ON while Talk is held.':
+    waiting?'PTT only: starting microphone… keep holding Talk.':
+    'PTT only: microphone OFF while idle; joined channels still receive.';
+}
+function renderMicMode(){
+  if(ui.pttOnlyMicrophone)ui.pttOnlyMicrophone.checked=pttOnlyMicrophone;
+  if(ui.micModeStatus)ui.micModeStatus.textContent=micStateSummary();
+}
+function makeStandbyAudio(){
+  const C=window.AudioContext||window.webkitAudioContext;
+  if(!C)throw new Error('PTT-only mode requires Web Audio support');
+  if(!standbyAudioContext || standbyAudioContext.state==='closed')standbyAudioContext=new C();
+  const destination=standbyAudioContext.createMediaStreamDestination();
+  const source=standbyAudioContext.createConstantSource?
+    standbyAudioContext.createConstantSource():standbyAudioContext.createOscillator();
+  const zero=standbyAudioContext.createGain();
+  zero.gain.value=0;
+  source.connect(zero);zero.connect(destination);source.start();
+  const track=destination.stream?.getAudioTracks()?.[0];
+  if(!track){source.stop();source.disconnect();zero.disconnect();throw Error('Cannot create a standby radio audio track');}
+  track.enabled=false;
+  return {track,stream:destination.stream,destination,source,zero,context:standbyAudioContext};
+}
+function closeStandbyAudioIfUnused(){
+  if([...sessions.values()].some(s=>s.pttMode))return;
+  const ctx=standbyAudioContext;standbyAudioContext=null;
+  if(ctx)try{void ctx.close();}catch{}
+}
+function releasePTTMicrophone(session){
+  if(!session?.pttMode)return;
+  ++session.pttMicSerial; // Invalidate any getUserMedia resolving after release.
+  const node=session.pttInputNode,stream=session.pttInputStream;
+  session.pttInputNode=null;session.pttInputStream=null;session.pttMicPending=null;
+  try{node?.disconnect();}catch{}
+  try{stream?.getTracks().forEach(track=>track.stop());}catch{}
+  if(stream)logRadio('PTT MIC OFF',session.room.title,'Physical microphone released');
+  renderMicMode();
+}
+async function preparePTTMicrophone(session){
+  if(!session?.pttMode||session.pttInputStream||session.pttMicPending)return;
+  const epoch=++session.pttMicSerial;
+  logRadio('PTT MIC REQUEST',session.room.title,'Opening physical microphone');
+  // Must be requested directly from the PTT gesture, before awaiting signaling.
+  const work=navigator.mediaDevices.getUserMedia(MICROPHONE_CONSTRAINTS);
+  session.pttMicPending=work;
+  renderMicMode();
+  try{
+    const stream=await work;
+    if(session.pttMicSerial!==epoch ||session.stopped || !session.wantTalk ||selectedTx!==session){
+      stream.getTracks().forEach(track=>track.stop());
+      logRadio('PTT MIC CANCELLED',session.room.title,'Late microphone permission or quick release');
+      return;
+    }
+    const input=session.pttContext.createMediaStreamSource(stream);
+    try{input.connect(session.pttDestination);}
+    catch(error){input.disconnect();stream.getTracks().forEach(track=>track.stop());throw error;}
+    session.pttInputStream=stream;session.pttInputNode=input;
+    logRadio('PTT MIC ON',session.room.title,'Input ready for radio floor');
+    session.transmitIfAllowed(false);
+    renderMicMode();
+  }catch(error){
+    if(session.pttMicSerial===epoch){
+      const reason=String(error?.name||error?.message||'unknown').slice(0,85);
+      logRadio('PTT MIC ERROR',session.room.title,reason);
+      reportError('PTT-only microphone failed to activate ('+reason+'). Try again or uncheck PTT-only mode.');
+      session.note='Microphone could not activate: '+reason;
+      updateRow(session.publicId);updateQuick();
+    }
+  }finally{
+    if(session.pttMicSerial===epoch)session.pttMicPending=null;
+    renderMicMode();
+  }
+}
+async function setPTTOnlyMicrophone(enabled){
+  const next=Boolean(enabled);
+  if(next===pttOnlyMicrophone){renderMicMode();return;}
+  if(selectedTx||joinInProgress){
+    setMessage('Release Talk and wait for channel joining to finish before changing microphone mode.');
+    renderMicMode();return;
+  }
+  const rejoin=[...sessions.keys()];
+  // Existing call tracks are a different kind (hardware mic vs silent AudioContext
+  // placeholder). Briefly reconnect only on a mode change, NEVER for each PTT.
+  for(const id of rejoin)leaveChannel(id);
+  pttOnlyMicrophone=next;storeSet(PTT_MIC_MODE_KEY,next);renderMicMode();
+  logRadio('MICROPHONE MODE','','Changed to '+(next?'PTT only':'always ready'));
+  for(const id of rejoin){
+    const room=storedRoom(id);
+    if(room)await joinChannel(room);
+  }
+  setMessage((next?'PTT-only microphone enabled. Released when idle.':
+    'Always-ready microphone enabled. Muted when idle.')+
+    (rejoin.length?' Joined channels reconnected.':''));
+  renderMicMode();
+}
+ui.pttOnlyMicrophone?.addEventListener('change',()=>{void setPTTOnlyMicrophone(ui.pttOnlyMicrophone.checked);});
+renderMicMode();
+
 async function ensureMicrophone(){
   if(microphone && microphone.getAudioTracks()[0]?.readyState==='live')return microphone;
   if(micPromise)return micPromise;
-  micPromise=navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false})
+  micPromise=navigator.mediaDevices.getUserMedia(MICROPHONE_CONSTRAINTS)
     .then(stream=>{
       const source=stream.getAudioTracks()[0];
       if(!source || typeof source.clone!=='function'){stream.getTracks().forEach(x=>x.stop());throw Error('This browser cannot create separate microphone tracks. No channels were connected.');}
