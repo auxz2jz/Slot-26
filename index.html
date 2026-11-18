@@ -7,15 +7,15 @@
 <meta name="description" content="Relay One handheld-style push-to-talk with Basic/Advanced channels, visual scan, and instant radio activity display.">
 <title>Relay One — Shared Radio Channels</title>
 <link rel="stylesheet" href="./styles.css?v=4.1.0">
-<link rel="stylesheet" href="./multi.css?v=6.13.0">
+<link rel="stylesheet" href="./multi.css?v=6.14.0">
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
-<script type="module" src="./multi-radio.js?v=6.13.0"></script>
+<script type="module" src="./multi-radio.js?v=6.14.0"></script>
 </head>
 <body>
 <main class="app multi-app">
   <header class="masthead">
     <div class="brand-mark" aria-hidden="true">◉</div>
-    <div><p class="eyebrow">RELAY ONE / RADIO V6.13</p><h1>Field radio</h1></div>
+    <div><p class="eyebrow">RELAY ONE / RADIO V6.14</p><h1>Field radio</h1></div>
     <span id="channelModeBadge" class="version">2 channels</span>
   </header>
 
@@ -71,7 +71,8 @@
       <strong>Microphone activation</strong>
       <label class="setting-toggle"><input id="pttOnlyMicrophone" type="checkbox"> <strong>Turn microphone off between transmissions</strong></label>
       <p class="small muted">Unchecked: always ready, microphone open but muted between transmissions (fastest). Checked: physical microphone is released when idle, and starts when Talk is activated. Wait for the red TRANSMITTING indicator before speaking. Changing this setting briefly rejoins connected channels.</p>
-      <label class="setting-toggle"><input id="pttReadyCue" type="checkbox" checked> Play ready beep in microphone-off mode</label>
+      <label class="setting-toggle"><input id="pttReadyCue" type="checkbox" checked> Play local transmit-ready beep (both microphone modes)</label>
+      <button id="testReadyCue" type="button" class="secondary">Test ready beep (no transmission)</button>
       <p id="micModeStatus" class="small" role="status">Always ready — microphone opens on join.</p>
       <p id="micDelayStatus" class="small muted"></p>
     </div>
@@ -88,7 +89,7 @@
       <p class="small muted">Genuine held keyboard buttons act like the touchscreen. Short media pulses use press-on / press-off, because Android does not expose their true held state. External transmissions stop after 30 seconds or when the page loses focus. The touchscreen Talk button also stops a toggled transmission.</p>
       <div class="hardware-ptt-buttons">
         <button id="hardwareAudioCheck" type="button" class="secondary">Check audio devices</button>
-        <button id="hardwareCopy" type="button" class="secondary">Copy hardware diagnostics</button>
+        <button id="hardwareCopy" type="button" class="secondary">Copy global diagnostics</button>
       </div>
       <p id="hardwareAudioStatus" class="small muted">Android selects the microphone and earbud route.</p>
       <pre id="hardwareLog" class="diag-log" aria-label="Hardware PTT test events">No hardware button test yet.</pre>
@@ -147,7 +148,7 @@
       <p id="speechDiagSummary" class="small">Waiting for diagnostic data.</p>
       <div class="speech-diag-actions">
         <button type="button" id="speechTest" class="secondary">Test browser speech (legacy)</button>
-        <button type="button" id="speechCopyDiagnostics" class="secondary">Copy speech diagnostics</button>
+        <button type="button" id="speechCopyDiagnostics" class="secondary">Copy global diagnostics</button>
       </div>
       <p class="small muted">This diagnostic tests the legacy browser speech recognizer independently. On-device Whisper is tested by loading the model and using PTT on a joined channel. Neither diagnostic uploads your radio recording.</p>
       <p class="small" id="speechTestPreview" role="status" aria-live="polite">Test not started.</p>
@@ -218,13 +219,13 @@
   </details>
 
   <details class="card radio-diag" id="diagnosticsPanel">
-    <summary><strong>Connection diagnostics</strong> <span class="secondary-text">For troubleshooting multi-channel audio</span></summary>
-    <p class="small muted">See whether a channel loses signaling, media, or internet connectivity. This log is kept in memory only and does not include PINs or conversation audio. Android's actual 5G signal strength is not available to a webpage.</p>
+    <summary><strong>Global diagnostics</strong> <span class="secondary-text">All radio features</span></summary>
+    <p class="small muted">One report includes connection, channel state, microphone, PTT, headset, sound cues, scan, speech-to-text, and data usage. Logs are kept in memory only and exclude PINs and conversation audio. Android's actual 5G signal strength is not available to a webpage.</p>
     <div class="multi-toolbar">
-      <button class="secondary" id="copyDiagnostics" type="button">Copy diagnostic log</button>
-      <button class="secondary" id="clearDiagnostics" type="button">Clear log</button>
+      <button class="secondary" id="copyDiagnostics" type="button">Copy global diagnostics</button>
+      <button class="secondary" id="clearDiagnostics" type="button">Clear all event logs</button>
     </div>
-    <pre id="diagnosticLog" class="diag-log" aria-live="polite">Connection events will appear here.</pre>
+    <pre id="diagnosticLog" class="diag-log" aria-live="polite">Radio diagnostic events will appear here.</pre>
   </details>
 
   <section class="card warning">
