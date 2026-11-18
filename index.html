@@ -7,15 +7,15 @@
 <meta name="description" content="Relay One handheld-style push-to-talk with Basic/Advanced channels, visual scan, and instant radio activity display.">
 <title>Relay One — Shared Radio Channels</title>
 <link rel="stylesheet" href="./styles.css?v=4.1.0">
-<link rel="stylesheet" href="./multi.css?v=6.7.0">
+<link rel="stylesheet" href="./multi.css?v=6.8.0">
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
-<script type="module" src="./multi-radio.js?v=6.7.0"></script>
+<script type="module" src="./multi-radio.js?v=6.8.0"></script>
 </head>
 <body>
 <main class="app multi-app">
   <header class="masthead">
     <div class="brand-mark" aria-hidden="true">◉</div>
-    <div><p class="eyebrow">RELAY ONE / RADIO V6.7</p><h1>Field radio</h1></div>
+    <div><p class="eyebrow">RELAY ONE / RADIO V6.8</p><h1>Field radio</h1></div>
     <span id="channelModeBadge" class="version">2 channels</span>
   </header>
 
@@ -61,6 +61,14 @@
         <button id="rightHanded" type="button" class="secondary" aria-pressed="true">Right</button>
       </div>
       <p id="focusHint" class="small muted">Select a channel, tap Join, then hold Talk to transmit. Scan previews joined channels and pops up active transmissions.</p>
+    </div>
+    <div class="ptt-mic-setting" role="group" aria-label="Microphone activation mode">
+      <label class="setting-toggle" for="pttOnlyMicrophone">
+        <input id="pttOnlyMicrophone" type="checkbox">
+        <strong>Turn microphone off until PTT is pressed</strong>
+      </label>
+      <p class="small muted">Unchecked (default): microphone stays ready but muted until you talk — fastest PTT. Checked: microphone is fully released when idle and opens only while holding Talk; the first words may be delayed. Changing modes briefly reconnects joined channels.</p>
+      <p id="micModeStatus" class="small" role="status" aria-live="polite">Microphone: always ready (muted when idle)</p>
     </div>
     <div class="radio-mode-picker" role="group" aria-label="Radio mode">
       <div class="radio-mode-heading"><span class="micro-label">RADIO MODE</span><span class="small muted">Saved on this device</span></div>
@@ -201,7 +209,8 @@
     <p id="errorMessage" class="error hidden" role="alert"></p>
     <p class="small muted">Only channels you've joined receive audio, participant names, calls, and on-air activity. Monitoring a channel requires joining it. Basic/Advanced is not an access restriction. Channels 06–10 have only browser-side PIN checks, which can be bypassed; a real employee system requires login and server-enforced permissions.</p>
     <div class="backup-links">
-      <a href="./legacy-v6-6.html">Previous version (V6.6)</a>
+      <a href="./legacy-v6-7.html">Previous version (V6.7)</a>
+      <a href="./legacy-v6-6.html">Earlier version (V6.6)</a>
       <a href="./legacy-v6-5.html">Earlier version (V6.5)</a>
       <a href="./legacy-v6-4.html">Earlier version (V6.4)</a>
       <a href="./legacy-v6-3.html">Older version (V6.3)</a>
