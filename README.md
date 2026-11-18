@@ -1,8 +1,12 @@
-# Relay One — Global Diagnostics and Ready Cue (V6.14)
+# Relay One — Finished Controls and Development Tools (V6.15)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
 
 This is a browser-based push-to-talk prototype for a shared set of **ten fixed channels**. Every user sees the exact same channels. No individual invitation, channel creation, or channel distribution is required.
+
+## V6.15 — Finished controls above development divider
+
+Three top-level buttons activate or disable on-device speech-to-text, enable or disable headset PTT (detects and safely verifies an unbound button first), and toggle physical microphone release between transmissions. Speech activation uses the same Whisper loader and browser cache, reusing the active model if already loaded; the main control says Activating rather than Downloading. Original advanced model, microphone and headset controls, all tests, data meter, global diagnostics and rollback links remain below the prominent testing divider. The live radio, conversation, profile and channel manager stay above it. No changes to transmit-ready tone generation, media transport or microphone acquisition behavior. Quick control states and actions are included in global diagnostics.
 
 ## V6.14 — Global diagnostics and local transmit-ready sound
 
