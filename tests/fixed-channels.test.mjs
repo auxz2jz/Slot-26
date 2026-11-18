@@ -154,6 +154,7 @@ function browser(name,rooms,speechSupported=true,options={}){
     }
   }
   const workerInstances=[];
+  const toneStarts=[];
   class FakeWorker{
     constructor(path,config){this.path=path;this.config=config;this.sent=[];workerInstances.push(this);}
     postMessage(msg){
@@ -176,13 +177,19 @@ function browser(name,rooms,speechSupported=true,options={}){
     }
   }
   class FakeAudioContext{
-    constructor(){this.state='running';}
+    constructor(){this.state='running';this.currentTime=0;this.destination={};}
+    createOscillator(){return {
+      type:'sine',
+      frequency:{setValueAtTime(){},exponentialRampToValueAtTime(){}},
+      connect(){},start(){toneStarts.push(true);},stop(){}
+    };}
     createMediaStreamDestination(){return {stream:new FakeStream([track()])};}
     createConstantSource(){
       return {start(){},stop(){this.stopped=true;},connect(){},disconnect(){}};
     }
     createGain(){
-      return {gain:{value:1},connect(){},disconnect(){}};
+      return {gain:{value:1,setValueAtTime(){},linearRampToValueAtTime(){},
+        exponentialRampToValueAtTime(){}},connect(){},disconnect(){}};
     }
     createMediaStreamSource(stream){
       return {stream,connect(dest){this.destination=dest;},disconnect(){this.destination=null;}};
@@ -205,7 +212,7 @@ function browser(name,rooms,speechSupported=true,options={}){
     localStorage,location,{replaceState(){}},FakeStream,URLSearchParams,FakeWorker,
     soon,cancel,repeat,stopRepeat);
   return {...app,localStorage,recognitionInstances,workerInstances,
-    mediaRequests,resolveNextMic:()=>resolveNextMic?.()};
+    mediaRequests,resolveNextMic:()=>resolveNextMic?.(),toneStarts};
 
 }
 test('V6: overlapping preset channels isolate PTT and monitoring',async()=>{
@@ -723,4 +730,47 @@ test('V6.8: on-demand microphone still supports delayed on-device Whisper with r
   assert.equal(rx.getTranscripts().length,1);
   assert.equal(rx.getTranscripts()[0].direction,'rx');
   tx.leaveChannel(c.id);rx.leaveChannel(c.id);
+});
+
+test('V6.9: PTT-only shows microphone-starting until real audio becomes ready, then beeps once',async()=>{
+  const room=presets.CHANNEL_PRESETS[0];
+  const a=browser('Ready cue',[],true,{pttMic:true,deferMic:true});
+  await a.setPTTOnlyMicrophone(true);
+  await a.joinChannel(room);flush();
+  const s=a.sessions.get(room.id);
+  a.startPTT(s);flush();
+  assert.equal(s.transmitting,false);
+  assert.equal(a.ui.quickText.textContent,'MIC STARTING…','do not show transmitting before hardware mic is live');
+  assert.equal(a.toneStarts.length,0,'no ready beep while mic is still opening');
+  a.resolveNextMic();
+  await Promise.resolve();flush();
+  assert.equal(s.transmitting,true);
+  assert.equal(a.ui.quickText.textContent,'TRANSMITTING');
+  assert.equal(a.toneStarts.length,1,'one local ready sound after mic and floor become available');
+  assert.match(a.ui.micDelayStatus.textContent,/Last PTT-only start-up: \d+ ms/);
+  const report=a.speechDiagnosticReport();
+  assert.match(report,/PTT-only last mic acquired after: \d+ ms/);
+  assert.match(report,/PTT-only last transmitting after: \d+ ms/);
+  assert.match(report,/PTT MIC ACQUIRED/);
+  assert.match(report,/PTT TRANSMIT READY/);
+  a.releaseTalk(s);flush();
+  assert.equal(a.mediaRequests[0].readyState,'ended');
+  a.leaveChannel(room.id);
+});
+test('V6.9: ready cue can be disabled; still only capture after activation and stop on release',async()=>{
+  const room=presets.CHANNEL_PRESETS[0];
+  const a=browser('Quiet start',[],true,{pttMic:true});
+  await a.setPTTOnlyMicrophone(true);
+  a.ui.pttReadyCue.checked=false;
+  a.ui.pttReadyCue.listeners.change[0]();
+  assert.equal(JSON.parse(a.localStorage.getItem('relay-one.ptt-ready-cue.v6.9')),false);
+  await a.joinChannel(room);flush();
+  const s=a.sessions.get(room.id);
+  a.startPTT(s);flush();
+  await Promise.resolve();flush();
+  assert.equal(s.transmitting,true);
+  assert.equal(a.toneStarts.length,0,'operator disabled the ready cue');
+  a.releaseTalk(s);flush();
+  assert.equal(a.mediaRequests[0].readyState,'ended');
+  a.leaveChannel(room.id);
 });
