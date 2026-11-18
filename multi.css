@@ -266,21 +266,14 @@ body.radio-compact .group-people,body.radio-compact .group-msg{display:none}
 .local-asr-controls p{margin:0;font-size:11px;line-height:1.5}
 #asrState{color:#a6eed2}
 
-/* V6.8 optional hardware microphone release while preserving silent WebRTC links */
-.ptt-mic-setting{margin:12px 0;padding:12px;border:1px solid #355769;border-radius:11px;background:#102a39;display:flex;flex-direction:column;gap:7px}
-.ptt-mic-setting label{display:flex;gap:10px;align-items:center;font-size:13px;line-height:1.4}
-.ptt-mic-setting label input{width:19px;height:19px;flex-shrink:0;accent-color:#3ecea2}
-.ptt-mic-setting p{margin:0;line-height:1.45;font-size:11px}
-#micModeStatus{font-weight:700;color:#a9ead3}
-
-/* V6.10 external headset PTT */
+/* V6.12 simple external headset test panel */
+.hardware-ptt{margin:12px 0;padding:12px;border:1px solid #355769;border-radius:11px;background:#102a39}
 .hardware-ptt summary{cursor:pointer;font-size:14px;color:#c9e9e7;line-height:1.5}
 .hardware-ptt[open] summary{margin-bottom:8px}
+.hardware-ptt p{margin:8px 0;line-height:1.45}
+.hardware-ptt .setting-toggle{display:flex;gap:9px;align-items:center;margin:8px 0}
 .hardware-ptt-buttons{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
 .hardware-ptt-buttons button{min-height:40px;white-space:normal;flex:1;min-width:116px;font-size:12px}
 #hardwareStatus{color:#a9ead3;font-weight:650;overflow-wrap:anywhere}
 #hardwareLog{max-height:165px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:11px}
-
-/* V6.11 external toggle controls */
-.hardware-ptt select{width:100%;min-height:40px;border-radius:8px;padding:8px;background:#173447;color:#f2f9f8;border:1px solid #4b7380;font-size:13px}
 .hardware-ptt .hardware-stop:not(:disabled){background:#8b292f;color:#fff;border-color:#c95b60;font-weight:750}

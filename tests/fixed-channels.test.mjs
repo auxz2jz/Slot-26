@@ -119,7 +119,7 @@ const environmentNames=[
   'URLSearchParams','Worker','setTimeout','clearTimeout','setInterval','clearInterval'
 ];
 const appFactory=new Function(...utilityNames,...environmentNames,source+
-  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,setTranscriptMode,loadLocalAsr,hardwareDiagnosticReport,setPTTOnlyMicrophone,getPTTOnlyMicrophone:()=>pttOnlyMicrophone,getAsrState:()=>asrState,getAsrStats:()=>asrStats,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
+  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,setTranscriptMode,loadLocalAsr,hardwareDiagnosticReport,getAsrState:()=>asrState,getAsrStats:()=>asrStats,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
 const utilsForTest={
   ...utils,...presets,WebRTCUsageMeter,formatDataBytes,
   checkChannelPin:(channel,pin)=>presets.checkChannelPin(channel,pin,webcrypto),
@@ -634,260 +634,61 @@ test('V6.7: without explicit model load, PTT still works and never downloads a m
   radio.leaveChannel(channel.id);
 });
 
-test('V6.8: PTT-only microphone never opens hardware on join and releases it after each press',async()=>{
-  const channel=presets.CHANNEL_PRESETS[0];
-  const radio=browser('PTT Only',[],true,{pttMic:true});
-  await radio.setPTTOnlyMicrophone(true);flush();
-  assert.equal(radio.getPTTOnlyMicrophone(),true);
-  assert.equal(radio.ui.pttOnlyMicrophone.checked,true);
-  await radio.joinChannel(channel);flush();
-  const s=radio.sessions.get(channel.id);
-  assert.equal(radio.mediaRequests.length,0,'join must not call getUserMedia');
-  assert.equal(s.track.readyState,'live','silent WebRTC track stays available');
-  assert.equal(s.track.enabled,false);
-  radio.startPTT(s);flush();
-  assert.equal(s.track.enabled,false,'audio waits until microphone permission is granted');
-  await Promise.resolve();flush();
-  assert.equal(radio.mediaRequests.length,1,'first Talk opens real mic exactly once');
-  assert.equal(radio.mediaRequests[0].readyState,'live');
-  assert.equal(s.track.enabled,true,'mic is routed to the existing channel track when ready');
-  assert.equal(s.transmitting,true);
-  radio.releaseTalk(s);flush();
-  assert.equal(radio.mediaRequests[0].readyState,'ended','hardware microphone must be stopped on release');
-  assert.equal(s.track.readyState,'live','WebRTC standby placeholder remains live after release');
-  assert.equal(s.track.enabled,false);
-  assert.equal(s.pttInputStream,null);
-  radio.startPTT(s);flush();
-  await Promise.resolve();flush();
-  assert.equal(radio.mediaRequests.length,2,'second Talk must reacquire mic');
-  assert.equal(s.track.enabled,true);
-  radio.releaseTalk(s);flush();
-  assert.equal(radio.mediaRequests[1].readyState,'ended');
-  radio.leaveChannel(channel.id);
-  assert.equal(s.track.readyState,'ended','session should release silent placeholder on leave');
+
+function buttonPulse(app,{key='MediaPlayPause',code='',hold=145,t=100}={}){
+  app.fireWindow('keydown',{key,code,timeStamp:t});flush();
+  app.fireWindow('keyup',{key,code,timeStamp:t+hold});flush();
+}
+test('V6.12: V6.7 direct mic stays open while joined and never reopens on media toggle',async()=>{
+  const c=presets.CHANNEL_PRESETS[0],a=browser('Media headset',[]);
+  await a.joinChannel(c);flush();const s=a.sessions.get(c.id);
+  const track=a.mediaRequests[0];assert.equal(a.mediaRequests.length,1);
+  assert.equal(track.readyState,'live');assert.equal(s.track.enabled,false);
+  a.ui.hardwareLearn.listeners.click[0]();buttonPulse(a);
+  assert.equal(s.transmitting,false);assert.equal(a.ui.hardwareEnabled.disabled,false);
+  assert.match(a.hardwareDiagnosticReport(),/External button mode: toggle/);
+  a.ui.hardwareEnabled.checked=true;a.ui.hardwareEnabled.listeners.change[0]();
+  buttonPulse(a,{t:1000});assert.equal(s.transmitting,true);assert.equal(s.track.enabled,true);
+  assert.equal(a.mediaRequests.length,1);
+  buttonPulse(a,{t:2000});assert.equal(s.transmitting,false);assert.equal(s.track.enabled,false);
+  assert.equal(track.readyState,'live');assert.equal(a.mediaRequests.length,1);
+  buttonPulse(a,{t:3000});a.ui.hardwareStop.listeners.click[0]();flush();assert.equal(s.transmitting,false);
+  a.leaveChannel(c.id);assert.equal(track.readyState,'ended');
 });
-test('V6.8: releasing Talk before microphone grant cancels capture and never opens transmitting audio',async()=>{
-  const channel=presets.CHANNEL_PRESETS[0];
-  const radio=browser('Quick tap',[],true,{pttMic:true,deferMic:true});
-  await radio.setPTTOnlyMicrophone(true);
-  await radio.joinChannel(channel);flush();
-  const s=radio.sessions.get(channel.id);
-  radio.startPTT(s);flush();
-  assert.equal(s.track.enabled,false,'PTT waiting for permission');
-  radio.releaseTalk(s);flush();
-  assert.equal(s.track.enabled,false);
-  radio.resolveNextMic();
-  await Promise.resolve();flush();
-  assert.equal(radio.mediaRequests[0].readyState,'ended','late mic approval immediately stops the hardware track');
-  assert.equal(s.track.enabled,false);
-  assert.equal(s.transmitting,false);
-  radio.leaveChannel(channel.id);
+test('V6.12: genuine held keyboard button automatically maps to direct hold-to-talk',async()=>{
+  const c=presets.CHANNEL_PRESETS[0],a=browser('Held PTT',[]);
+  await a.joinChannel(c);flush();const s=a.sessions.get(c.id);
+  a.ui.hardwareLearn.listeners.click[0]();buttonPulse(a,{key:'F8',code:'F8',hold:1000});
+  assert.match(a.hardwareDiagnosticReport(),/External button mode: hold/);
+  a.ui.hardwareEnabled.checked=true;a.ui.hardwareEnabled.listeners.change[0]();
+  a.fireWindow('keydown',{key:'F8',code:'F8'});flush();assert.equal(s.transmitting,true);
+  a.fireWindow('keyup',{key:'F8',code:'F8'});flush();assert.equal(s.transmitting,false);
+  a.leaveChannel(c.id);
 });
-test('V6.8: switch microphone modes reconnects joined channels and restores original fast PTT behavior',async()=>{
-  const channel=presets.CHANNEL_PRESETS[0];
-  const radio=browser('Toggle test',[],true,{pttMic:true});
-  await radio.joinChannel(channel);flush();
-  const original=radio.sessions.get(channel.id);
-  assert.equal(radio.getPTTOnlyMicrophone(),false);
-  assert.equal(radio.mediaRequests.length,1,'default mode opens mic when joining');
-  await radio.setPTTOnlyMicrophone(true);flush();
-  const standby=radio.sessions.get(channel.id);
-  assert.notEqual(standby,original,'mode change reconnects once');
-  assert.equal(original.track.readyState,'ended');
-  assert.equal(radio.mediaRequests[0].readyState,'ended','old always-ready mic released');
-  assert.equal(radio.mediaRequests.length,1,'no mic request after switching to PTT only');
-  radio.startPTT(standby);flush();
-  await Promise.resolve();flush();
-  assert.equal(radio.mediaRequests.length,2);
-  radio.releaseTalk(standby);flush();
-  await radio.setPTTOnlyMicrophone(false);flush();
-  assert.equal(radio.getPTTOnlyMicrophone(),false);
-  assert.equal(radio.ui.pttOnlyMicrophone.checked,false);
-  assert.equal(radio.mediaRequests.length,3,'always-ready mode reacquires base microphone on rejoin');
-  const fast=radio.sessions.get(channel.id);
-  radio.startPTT(fast);flush();
-  assert.equal(fast.transmitting,true,'original fast PTT still works');
-  radio.releaseTalk(fast);
-  radio.leaveChannel(channel.id);
-});
-test('V6.8: on-demand microphone still supports delayed on-device Whisper with remote captions',async()=>{
-  const c=presets.CHANNEL_PRESETS[0];
-  const tx=browser('Patrol',[],true,{pttMic:true,local:true});
-  const rx=browser('Dispatch',[]);
-  await tx.setPTTOnlyMicrophone(true);
-  await tx.joinChannel(c);flush();
-  await rx.joinChannel(c);flush();
+test('V6.12: external toggle keeps original Whisper shared microphone and captions',async()=>{
+  const c=presets.CHANNEL_PRESETS[0],tx=browser('Headset caption',[],true,{local:true}),rx=browser('Dispatch',[]);
+  await tx.joinChannel(c);flush();await rx.joinChannel(c);flush();
   for(let i=0;i<3;i++){for(const tick of intervals.values())tick();flush();}
-  assert.equal(tx.mediaRequests.length,0);
-  tx.setTranscriptEnabled(true);
-  tx.loadLocalAsr();flush();
-  assert.equal(tx.getAsrState(),'ready');
-  const s=tx.sessions.get(c.id);
-  tx.startPTT(s);flush();
-  await Promise.resolve();flush();
-  assert.equal(s.transmitting,true);
-  assert.equal(tx.getAsrStats().recorded,1);
-  tx.releaseTalk(s);flush();
-  assert.equal(tx.mediaRequests[0].readyState,'ended','PTT-only releases mic before transcription');
+  tx.setTranscriptEnabled(true);tx.loadLocalAsr();flush();
+  tx.ui.hardwareLearn.listeners.click[0]();buttonPulse(tx);
+  tx.ui.hardwareEnabled.checked=true;tx.ui.hardwareEnabled.listeners.change[0]();
+  buttonPulse(tx,{t:1000});assert.equal(tx.sessions.get(c.id).transmitting,true);
+  buttonPulse(tx,{t:2000});assert.equal(tx.sessions.get(c.id).transmitting,false);
   for(let i=0;i<6;i++){await new Promise(resolve=>setTimeout(resolve,2));flush();}
-  assert.equal(tx.getAsrStats().completed,1);
-  assert.equal(tx.getTranscripts().length,1);
+  assert.equal(tx.mediaRequests.length,1);assert.equal(tx.getAsrStats().completed,1);
   assert.equal(rx.getTranscripts().length,1);
-  assert.equal(rx.getTranscripts()[0].direction,'rx');
   tx.leaveChannel(c.id);rx.leaveChannel(c.id);
 });
-
-test('V6.9: PTT-only shows microphone-starting until real audio becomes ready, then beeps once',async()=>{
-  const room=presets.CHANNEL_PRESETS[0];
-  const a=browser('Ready cue',[],true,{pttMic:true,deferMic:true});
-  await a.setPTTOnlyMicrophone(true);
-  await a.joinChannel(room);flush();
-  const s=a.sessions.get(room.id);
-  a.startPTT(s);flush();
-  assert.equal(s.transmitting,false);
-  assert.equal(a.ui.quickText.textContent,'MIC STARTING…','do not show transmitting before hardware mic is live');
-  assert.equal(a.toneStarts.length,0,'no ready beep while mic is still opening');
-  a.resolveNextMic();
-  await Promise.resolve();flush();
-  assert.equal(s.transmitting,true);
-  assert.equal(a.ui.quickText.textContent,'TRANSMITTING');
-  assert.equal(a.toneStarts.length,1,'one local ready sound after mic and floor become available');
-  assert.match(a.ui.micDelayStatus.textContent,/Last PTT-only start-up: \d+ ms/);
-  const report=a.speechDiagnosticReport();
-  assert.match(report,/PTT-only last mic acquired after: \d+ ms/);
-  assert.match(report,/PTT-only last transmitting after: \d+ ms/);
-  assert.match(report,/PTT MIC ACQUIRED/);
-  assert.match(report,/PTT TRANSMIT READY/);
-  a.releaseTalk(s);flush();
-  assert.equal(a.mediaRequests[0].readyState,'ended');
-  a.leaveChannel(room.id);
-});
-test('V6.9: ready cue can be disabled; still only capture after activation and stop on release',async()=>{
-  const room=presets.CHANNEL_PRESETS[0];
-  const a=browser('Quiet start',[],true,{pttMic:true});
-  await a.setPTTOnlyMicrophone(true);
-  a.ui.pttReadyCue.checked=false;
-  a.ui.pttReadyCue.listeners.change[0]();
-  assert.equal(JSON.parse(a.localStorage.getItem('relay-one.ptt-ready-cue.v6.9')),false);
-  await a.joinChannel(room);flush();
-  const s=a.sessions.get(room.id);
-  a.startPTT(s);flush();
-  await Promise.resolve();flush();
-  assert.equal(s.transmitting,true);
-  assert.equal(a.toneStarts.length,0,'operator disabled the ready cue');
-  a.releaseTalk(s);flush();
-  assert.equal(a.mediaRequests[0].readyState,'ended');
-  a.leaveChannel(room.id);
-});
-
-function learnHardware(a){
-  a.ui.hardwareLearn.listeners.click[0]();a.fireWindow('keydown',{timeStamp:100});a.fireWindow('keyup',{timeStamp:1100});
-  assert.match(a.ui.hardwareStatus.textContent,/Verified F8/);
-  a.ui.hardwareBind.listeners.click[0]();a.ui.hardwareEnabled.checked=true;
-  a.ui.hardwareEnabled.listeners.change[0]();
-}
-test('V6.10: detect without transmitting, opt in, and hold/release hardware button',async()=>{
-  const room=presets.CHANNEL_PRESETS[0];const a=browser('USB PTT',[]);
-  await a.joinChannel(room);flush();const s=a.sessions.get(room.id);
-  a.ui.hardwareLearn.listeners.click[0]();a.fireWindow('keydown',{timeStamp:100});flush();
-  assert.equal(s.transmitting,false);assert.equal(a.ui.hardwareBind.disabled,true);
-  a.fireWindow('keyup',{timeStamp:1100});flush();assert.equal(s.transmitting,false);assert.equal(a.ui.hardwareBind.disabled,false);
-  a.ui.hardwareBind.listeners.click[0]();a.fireWindow('keydown');flush();
-  assert.equal(s.transmitting,false);a.fireWindow('keyup');
+test('V6.12: external toggle fails closed on focus loss or watchdog',async()=>{
+  const c=presets.CHANNEL_PRESETS[0],a=browser('Headset safety',[]);
+  await a.joinChannel(c);flush();const s=a.sessions.get(c.id);
+  a.ui.hardwareLearn.listeners.click[0]();buttonPulse(a);
   a.ui.hardwareEnabled.checked=true;a.ui.hardwareEnabled.listeners.change[0]();
-  a.fireWindow('keydown');flush();assert.equal(s.transmitting,true);
-  a.fireWindow('keydown',{repeat:true});flush();a.fireWindow('pointerup');flush();
-  assert.equal(s.transmitting,true,'unrelated touch must not release external Talk');
-  a.fireWindow('keyup');flush();assert.equal(s.transmitting,false);
-  assert.match(a.hardwareDiagnosticReport(),/Live external presses: 1/);
-  assert.match(a.hardwareDiagnosticReport(),/Live external releases: 1/);a.leaveChannel(room.id);
-});
-test('V6.10: unmatched keyup cannot teach a button; blur fails closed',async()=>{
-  const room=presets.CHANNEL_PRESETS[0];const a=browser('USB safety',[]);
-  await a.joinChannel(room);flush();const s=a.sessions.get(room.id);
-  a.ui.hardwareLearn.listeners.click[0]();a.fireWindow('keydown',{timeStamp:100});
-  a.fireWindow('keyup',{key:'F9',code:'F9',timeStamp:900});assert.equal(a.ui.hardwareBind.disabled,true);
-  a.fireWindow('keyup',{timeStamp:1100});a.ui.hardwareBind.listeners.click[0]();
-  a.ui.hardwareEnabled.checked=true;a.ui.hardwareEnabled.listeners.change[0]();
-  a.fireWindow('keydown',{target:{tagName:'INPUT'}});flush();assert.equal(s.transmitting,false);
-  a.fireWindow('keydown');flush();assert.equal(s.transmitting,true);
+  buttonPulse(a,{t:1000});assert.equal(s.transmitting,true);
   a.fireWindow('blur');flush();assert.equal(s.transmitting,false);
-  a.fireWindow('keyup');flush();assert.equal(s.transmitting,false);a.leaveChannel(room.id);
-});
-test('V6.10: physical release stops PTT-only microphone',async()=>{
-  const room=presets.CHANNEL_PRESETS[0];const a=browser('USB on-demand',[],true,{pttMic:true});
-  await a.setPTTOnlyMicrophone(true);learnHardware(a);await a.joinChannel(room);flush();
-  const s=a.sessions.get(room.id);assert.equal(a.mediaRequests.length,0);
-  a.fireWindow('keydown');await Promise.resolve();flush();assert.equal(s.transmitting,true);
-  assert.equal(a.mediaRequests.length,1);a.fireWindow('keyup');flush();
-  assert.equal(s.transmitting,false);assert.equal(a.mediaRequests[0].readyState,'ended');a.leaveChannel(room.id);
-});
-
-test('V6.10: immediate media tap pairs cannot be mistaken for held PTT',()=>{
-  const a=browser('Short media click',[]);
-  a.ui.hardwareLearn.listeners.click[0]();
-  a.fireWindow('keydown',{key:'MediaPlayPause',code:'',timeStamp:100});
-  a.fireWindow('keyup',{key:'MediaPlayPause',code:'',timeStamp:101});
-  assert.equal(a.ui.hardwareBind.disabled,true);
-  assert.match(a.hardwareDiagnosticReport(),/TEST HOLD TOO SHORT/);
-  a.ui.hardwareLearn.listeners.click[0]();
-});
-
-function mediaPulse(a,t=100){
-  const props={key:'MediaPlayPause',code:''};
-  a.fireWindow('keydown',{...props,timeStamp:t});flush();
-  a.fireWindow('keyup',{...props,timeStamp:t+145});flush();
-}
-function learnToggle(a){
-  a.ui.hardwareMode.value='toggle';a.ui.hardwareMode.listeners.change[0]();
-  a.ui.hardwareLearn.listeners.click[0]();
-  mediaPulse(a);
-  assert.equal(a.ui.hardwareBind.disabled,false,'short pulse is valid in explicit toggle mode');
-  a.ui.hardwareBind.listeners.click[0]();
-  a.ui.hardwareEnabled.checked=true;a.ui.hardwareEnabled.listeners.change[0]();
-}
-test('V6.11: 145 ms media pulse toggles PTT, keyup does not stop it, next pulse stops',async()=>{
-  const room=presets.CHANNEL_PRESETS[0];const a=browser('Toggle headset',[]);
-  await a.joinChannel(room);flush();const s=a.sessions.get(room.id);
-  learnToggle(a);assert.equal(s.transmitting,false,'learning never transmits');
-  mediaPulse(a,1000);assert.equal(s.transmitting,true);assert.equal(a.ui.hardwareStop.disabled,false);
-  a.fireWindow('keydown',{key:'MediaPlayPause',code:'',repeat:true});flush();assert.equal(s.transmitting,true);
-  mediaPulse(a,2000);assert.equal(s.transmitting,false);assert.equal(a.ui.hardwareStop.disabled,true);
-  assert.match(a.hardwareDiagnosticReport(),/External button mode: toggle/);
-  assert.match(a.hardwareDiagnosticReport(),/Live external presses: 1/);
-  assert.match(a.hardwareDiagnosticReport(),/Live external releases: 1/);
-  mediaPulse(a,3000);assert.equal(s.transmitting,true);
-  a.ui.hardwareStop.listeners.click[0]();flush();assert.equal(s.transmitting,false);
-  mediaPulse(a,4000);a.fireWindow('blur');flush();assert.equal(s.transmitting,false);
-  a.leaveChannel(room.id);
-});
-test('V6.11: toggle controls on-demand mic and stops it on second pulse, mode switch requires new binding',async()=>{
-  const room=presets.CHANNEL_PRESETS[0];const a=browser('Toggle cold mic',[],true,{pttMic:true});
-  await a.setPTTOnlyMicrophone(true);learnToggle(a);await a.joinChannel(room);flush();
-  const s=a.sessions.get(room.id);assert.equal(a.mediaRequests.length,0);
-  mediaPulse(a,1000);await Promise.resolve();flush();
-  assert.equal(s.transmitting,true);assert.equal(a.mediaRequests.length,1);
-  mediaPulse(a,3000);assert.equal(s.transmitting,false);assert.equal(a.mediaRequests[0].readyState,'ended');
-  a.ui.hardwareMode.value='hold';a.ui.hardwareMode.listeners.change[0]();
-  assert.equal(a.ui.hardwareEnabled.checked,false);assert.equal(a.ui.hardwareEnabled.disabled,true);
-  a.leaveChannel(room.id);
-});
-
-test('V6.11: enabling checkbox focus does not swallow a media pulse and watchdog stops toggle',async()=>{
-  const room=presets.CHANNEL_PRESETS[0];const a=browser('Toggle safety timer',[]);
-  await a.joinChannel(room);flush();const s=a.sessions.get(room.id);learnToggle(a);
-  a.ui.hardwareTimeout.value='15';a.ui.hardwareTimeout.listeners.change[0]();
-  const props={key:'MediaPlayPause',code:'',target:{tagName:'INPUT',type:'checkbox'}};
-  a.fireWindow('keydown',{...props,timeStamp:1000});a.fireWindow('keyup',{...props,timeStamp:1145});flush();
-  assert.equal(s.transmitting,true);
-  a.fireWindow('keydown',{...props,target:{tagName:'INPUT',type:'text'},timeStamp:2000});
-  a.fireWindow('keyup',{...props,timeStamp:2145});flush();
-  assert.equal(s.transmitting,false,'second pulse stops even in a text field');
-  mediaPulse(a,3000);assert.equal(s.transmitting,true);
-  const timer=[...jobs.entries()].filter(([id])=>!queue.includes(id)).at(-1);
-  assert.ok(timer,'watchdog scheduled');
-  timer[1]();flush();
-  assert.equal(s.transmitting,false,'watchdog releases transmission');
+  buttonPulse(a,{t:2000});assert.equal(s.transmitting,true);
+  const watchdog=[...jobs.entries()].filter(([id])=>!queue.includes(id)).at(-1);
+  assert.ok(watchdog);watchdog[1]();flush();assert.equal(s.transmitting,false);
   assert.match(a.hardwareDiagnosticReport(),/Safety timeouts: 1/);
-  a.leaveChannel(room.id);
+  a.leaveChannel(c.id);
 });

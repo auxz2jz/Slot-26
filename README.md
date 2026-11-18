@@ -1,10 +1,19 @@
-# Relay One — Handheld Radio with PTT Ready Cue (Version 6.9)
+# Relay One — Original Always-Ready Radio + External Button (V6.12)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
 
 This is a browser-based push-to-talk prototype for a shared set of **ten fixed channels**. Every user sees the exact same channels. No individual invitation, channel creation, or channel distribution is required.
 
-## V6.11 — External headset press-to-toggle mode
+## V6.12 — Controlled rollback to original V6.7 microphone
+
+The active radio is rebuilt from the saved V6.7 index, script and stylesheet rather than the V6.8–6.11 microphone activation work. No PTT-only microphone switch, silent Web Audio placeholder, microphone start-up delay settings, or ready-cue changes remain in the active version. The microphone is acquired at join and stays open, muted when idle; the original shared-track Whisper code remains. The sole added feature is external headset button detection/control with a simple enable checkbox.
+
+Hold the physical button for one second, release, and enable the detected binding. A short pulse (including the observed 145 ms MediaPlayPause) maps to press-on/press-off automatically; a genuine held keyboard event maps to hold/release. Detection never transmits. External controls call the original startPTT/releaseTalk path, with a fixed 30-second safety timeout, touchscreen stop, and loss-of-focus release. Actual headset compatibility still needs testing; rollback does not make Android expose the physical hold duration. Audio routing remains Android/Chrome's responsibility.
+
+Previous V6.11 preserved: https://auxz2jz.github.io/Slot-26/legacy-v6-11.html
+Pure V6.7: https://auxz2jz.github.io/Slot-26/legacy-v6-7.html
+
+## V6.11 — External headset press-to-toggle mode (archived)
 
 Some Android USB-C PTT headsets present only a standardized MediaPlayPause pulse (observed 144–145 ms regardless of the physical hold duration). Select **Press to toggle** in External USB-C / headset PTT, run Detect button and save the matching pulse, then enable external PTT. The next pulse starts transmission and its keyup does not stop it; a second press stops transmission. Hold mode still requires a verified 250 ms or longer press/release pair. Changing modes clears the old binding to prevent a pulse accidentally becoming a hold binding.
 
