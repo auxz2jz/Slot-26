@@ -4,6 +4,14 @@
 
 This is a browser-based push-to-talk prototype for a shared set of **ten fixed channels**. Every user sees the exact same channels. No individual invitation, channel creation, or channel distribution is required.
 
+## V6.10 — External USB-C / headset PTT (browser compatibility test)
+
+Connect the headset and expand **External USB-C / headset PTT**. **Detect button** listens for browser keyboard/HID-style press AND release events for 20 seconds without transmitting. Once a matching pair is verified, save the binding and explicitly enable it. The selected channel's usual PTT, microphone mode and Whisper paths are used. Repeat events, editable fields, and unrelated pointer releases are handled; losing focus, hiding the page, or a 45-second maximum hold releases Talk. A fresh release is required after a watchdog stop.
+
+Android may consume headset media/volume commands without exposing them to Chrome. A one-shot media action is insufficient for hold-to-talk. There is no claim of native USB access or screen-off operation. **Check audio devices** lists endpoints exposed by Chrome without additional microphone permission; the OS/browser chooses the actual route. Hardware diagnostics omit audio, transcripts, device IDs and PINs; headset support still requires a physical-device test.
+
+Rollback: https://auxz2jz.github.io/Slot-26/legacy-v6-9.html
+
 ## V6.9 — PTT-only microphone readiness and measured activation (experimental)
 
 Android Chrome requires time to open a microphone that has been completely closed. Early speech spoken immediately after pressing Talk cannot be retroactively captured; a short transmission may be partially silent even though the Whisper model works. A Samsung report showed that the spoken count “one two three four” could be captured only as “three four” in PTT-only mode, while always-ready mode worked normally.

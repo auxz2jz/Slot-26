@@ -272,3 +272,11 @@ body.radio-compact .group-people,body.radio-compact .group-msg{display:none}
 .ptt-mic-setting label input{width:19px;height:19px;flex-shrink:0;accent-color:#3ecea2}
 .ptt-mic-setting p{margin:0;line-height:1.45;font-size:11px}
 #micModeStatus{font-weight:700;color:#a9ead3}
+
+/* V6.10 external headset PTT */
+.hardware-ptt summary{cursor:pointer;font-size:14px;color:#c9e9e7;line-height:1.5}
+.hardware-ptt[open] summary{margin-bottom:8px}
+.hardware-ptt-buttons{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.hardware-ptt-buttons button{min-height:40px;white-space:normal;flex:1;min-width:116px;font-size:12px}
+#hardwareStatus{color:#a9ead3;font-weight:650;overflow-wrap:anywhere}
+#hardwareLog{max-height:165px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:11px}

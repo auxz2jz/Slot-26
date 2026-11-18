@@ -7,15 +7,15 @@
 <meta name="description" content="Relay One handheld-style push-to-talk with Basic/Advanced channels, visual scan, and instant radio activity display.">
 <title>Relay One — Shared Radio Channels</title>
 <link rel="stylesheet" href="./styles.css?v=4.1.0">
-<link rel="stylesheet" href="./multi.css?v=6.9.0">
+<link rel="stylesheet" href="./multi.css?v=6.10.0">
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
-<script type="module" src="./multi-radio.js?v=6.9.0"></script>
+<script type="module" src="./multi-radio.js?v=6.10.0"></script>
 </head>
 <body>
 <main class="app multi-app">
   <header class="masthead">
     <div class="brand-mark" aria-hidden="true">◉</div>
-    <div><p class="eyebrow">RELAY ONE / RADIO V6.9</p><h1>Field radio</h1></div>
+    <div><p class="eyebrow">RELAY ONE / RADIO V6.10</p><h1>Field radio</h1></div>
     <span id="channelModeBadge" class="version">2 channels</span>
   </header>
 
@@ -75,6 +75,27 @@
       <p id="micModeStatus" class="small" role="status" aria-live="polite">Microphone: always ready (muted when idle)</p>
       <p id="micDelayStatus" class="small muted" aria-live="polite">PTT-only start-up timing will appear here after a press.</p>
     </div>
+    <details class="ptt-mic-setting hardware-ptt" id="hardwarePTTPanel">
+      <summary><strong>External USB-C / headset PTT</strong></summary>
+      <p class="small muted">Connect the headset. Tap Detect button, then press, hold briefly, and release its physical PTT once. Detection does not transmit.</p>
+      <div class="hardware-ptt-buttons">
+        <button id="hardwareLearn" type="button" class="secondary">Detect button</button>
+        <button id="hardwareBind" type="button" class="secondary" disabled>Use detected button</button>
+        <button id="hardwareClear" type="button" class="secondary">Clear binding</button>
+      </div>
+      <label class="setting-toggle" for="hardwareEnabled">
+        <input id="hardwareEnabled" type="checkbox" disabled>
+        <strong>Enable external hold-to-talk button</strong>
+      </label>
+      <p id="hardwareStatus" class="small" role="status" aria-live="polite">No external button configured.</p>
+      <p class="small muted">Both press and release must reach Chrome. Android may intercept headset/media buttons. Keep this page visible; media play/pause alone is not a safe PTT signal.</p>
+      <div class="hardware-ptt-buttons">
+        <button id="hardwareAudioCheck" type="button" class="secondary">Check audio devices</button>
+        <button id="hardwareCopy" type="button" class="secondary">Copy hardware diagnostics</button>
+      </div>
+      <p id="hardwareAudioStatus" class="small muted">Android selects the default headset audio route. Check devices after plugging in your headset.</p>
+      <pre id="hardwareLog" class="diag-log" aria-label="Hardware PTT test events">No hardware button test yet.</pre>
+    </details>
     <div class="radio-mode-picker" role="group" aria-label="Radio mode">
       <div class="radio-mode-heading"><span class="micro-label">RADIO MODE</span><span class="small muted">Saved on this device</span></div>
       <div class="radio-mode-buttons">
@@ -214,7 +235,8 @@
     <p id="errorMessage" class="error hidden" role="alert"></p>
     <p class="small muted">Only channels you've joined receive audio, participant names, calls, and on-air activity. Monitoring a channel requires joining it. Basic/Advanced is not an access restriction. Channels 06–10 have only browser-side PIN checks, which can be bypassed; a real employee system requires login and server-enforced permissions.</p>
     <div class="backup-links">
-      <a href="./legacy-v6-8.html">Previous version (V6.8)</a>
+      <a href="./legacy-v6-9.html">Previous version (V6.9)</a>
+      <a href="./legacy-v6-8.html">Earlier version (V6.8)</a>
       <a href="./legacy-v6-7.html">Earlier version (V6.7)</a>
       <a href="./legacy-v6-6.html">Earlier version (V6.6)</a>
       <a href="./legacy-v6-5.html">Earlier version (V6.5)</a>

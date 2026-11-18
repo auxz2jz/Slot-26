@@ -119,7 +119,7 @@ const environmentNames=[
   'URLSearchParams','Worker','setTimeout','clearTimeout','setInterval','clearInterval'
 ];
 const appFactory=new Function(...utilityNames,...environmentNames,source+
-  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,setTranscriptMode,loadLocalAsr,setPTTOnlyMicrophone,getPTTOnlyMicrophone:()=>pttOnlyMicrophone,getAsrState:()=>asrState,getAsrStats:()=>asrStats,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
+  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,setTranscriptMode,loadLocalAsr,hardwareDiagnosticReport,setPTTOnlyMicrophone,getPTTOnlyMicrophone:()=>pttOnlyMicrophone,getAsrState:()=>asrState,getAsrStats:()=>asrStats,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
 const utilsForTest={
   ...utils,...presets,WebRTCUsageMeter,formatDataBytes,
   checkChannelPin:(channel,pin)=>presets.checkChannelPin(channel,pin,webcrypto),
@@ -202,7 +202,8 @@ function browser(name,rooms,speechSupported=true,options={}){
     }
     close(){this.state='closed';return Promise.resolve();}
   }
-  const window={isSecureContext:true,Peer,addEventListener(){},
+  const windowListeners={};
+  const window={isSecureContext:true,Peer,addEventListener(type,fn){(windowListeners[type]??=[]).push(fn);},
     SpeechRecognition:speechSupported?FakeRecognition:undefined,
     MediaRecorder:options.local?FakeRecorder:undefined,
     AudioContext:options.local||options.pttMic?FakeAudioContext:undefined,
@@ -212,7 +213,11 @@ function browser(name,rooms,speechSupported=true,options={}){
     localStorage,location,{replaceState(){}},FakeStream,URLSearchParams,FakeWorker,
     soon,cancel,repeat,stopRepeat);
   return {...app,localStorage,recognitionInstances,workerInstances,
-    mediaRequests,resolveNextMic:()=>resolveNextMic?.(),toneStarts};
+    mediaRequests,resolveNextMic:()=>resolveNextMic?.(),toneStarts,
+    fireWindow:(type,props={})=>{
+      const event={target:{tagName:'BODY'},key:'F8',code:'F8',preventDefault(){this.defaultPrevented=true;},stopPropagation(){},...props};
+      for(const fn of windowListeners[type]||[])fn(event);return event;
+    }};
 
 }
 test('V6: overlapping preset channels isolate PTT and monitoring',async()=>{
@@ -773,4 +778,47 @@ test('V6.9: ready cue can be disabled; still only capture after activation and s
   a.releaseTalk(s);flush();
   assert.equal(a.mediaRequests[0].readyState,'ended');
   a.leaveChannel(room.id);
+});
+
+function learnHardware(a){
+  a.ui.hardwareLearn.listeners.click[0]();a.fireWindow('keydown');a.fireWindow('keyup');
+  assert.match(a.ui.hardwareStatus.textContent,/Verified F8/);
+  a.ui.hardwareBind.listeners.click[0]();a.ui.hardwareEnabled.checked=true;
+  a.ui.hardwareEnabled.listeners.change[0]();
+}
+test('V6.10: detect without transmitting, opt in, and hold/release hardware button',async()=>{
+  const room=presets.CHANNEL_PRESETS[0];const a=browser('USB PTT',[]);
+  await a.joinChannel(room);flush();const s=a.sessions.get(room.id);
+  a.ui.hardwareLearn.listeners.click[0]();a.fireWindow('keydown');flush();
+  assert.equal(s.transmitting,false);assert.equal(a.ui.hardwareBind.disabled,true);
+  a.fireWindow('keyup');flush();assert.equal(s.transmitting,false);assert.equal(a.ui.hardwareBind.disabled,false);
+  a.ui.hardwareBind.listeners.click[0]();a.fireWindow('keydown');flush();
+  assert.equal(s.transmitting,false);a.fireWindow('keyup');
+  a.ui.hardwareEnabled.checked=true;a.ui.hardwareEnabled.listeners.change[0]();
+  a.fireWindow('keydown');flush();assert.equal(s.transmitting,true);
+  a.fireWindow('keydown',{repeat:true});flush();a.fireWindow('pointerup');flush();
+  assert.equal(s.transmitting,true,'unrelated touch must not release external Talk');
+  a.fireWindow('keyup');flush();assert.equal(s.transmitting,false);
+  assert.match(a.hardwareDiagnosticReport(),/Live external presses: 1/);
+  assert.match(a.hardwareDiagnosticReport(),/Live external releases: 1/);a.leaveChannel(room.id);
+});
+test('V6.10: unmatched keyup cannot teach a button; blur fails closed',async()=>{
+  const room=presets.CHANNEL_PRESETS[0];const a=browser('USB safety',[]);
+  await a.joinChannel(room);flush();const s=a.sessions.get(room.id);
+  a.ui.hardwareLearn.listeners.click[0]();a.fireWindow('keydown');
+  a.fireWindow('keyup',{key:'F9',code:'F9'});assert.equal(a.ui.hardwareBind.disabled,true);
+  a.fireWindow('keyup');a.ui.hardwareBind.listeners.click[0]();
+  a.ui.hardwareEnabled.checked=true;a.ui.hardwareEnabled.listeners.change[0]();
+  a.fireWindow('keydown',{target:{tagName:'INPUT'}});flush();assert.equal(s.transmitting,false);
+  a.fireWindow('keydown');flush();assert.equal(s.transmitting,true);
+  a.fireWindow('blur');flush();assert.equal(s.transmitting,false);
+  a.fireWindow('keyup');flush();assert.equal(s.transmitting,false);a.leaveChannel(room.id);
+});
+test('V6.10: physical release stops PTT-only microphone',async()=>{
+  const room=presets.CHANNEL_PRESETS[0];const a=browser('USB on-demand',[],true,{pttMic:true});
+  await a.setPTTOnlyMicrophone(true);learnHardware(a);await a.joinChannel(room);flush();
+  const s=a.sessions.get(room.id);assert.equal(a.mediaRequests.length,0);
+  a.fireWindow('keydown');await Promise.resolve();flush();assert.equal(s.transmitting,true);
+  assert.equal(a.mediaRequests.length,1);a.fireWindow('keyup');flush();
+  assert.equal(s.transmitting,false);assert.equal(a.mediaRequests[0].readyState,'ended');a.leaveChannel(room.id);
 });
