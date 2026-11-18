@@ -29,7 +29,7 @@ const ui = {
   prevChannel:$('prevChannel'),nextChannel:$('nextChannel'),
   radioJoin:$('radioJoin'),radioMonitor:$('radioMonitor'),radioCall:$('radioCall'),
   radioScan:$('radioScan'),leftHanded:$('leftHanded'),rightHanded:$('rightHanded'),
-  pttOnlyMicrophone:$('pttOnlyMicrophone'),pttReadyCue:$('pttReadyCue'),micModeStatus:$('micModeStatus'),micDelayStatus:$('micDelayStatus'),
+  pttOnlyMicrophone:$('pttOnlyMicrophone'),pttReadyCue:$('pttReadyCue'),testReadyCue:$('testReadyCue'),micModeStatus:$('micModeStatus'),micDelayStatus:$('micDelayStatus'),
   radioConnectionState:$('radioConnectionState'),radioMicState:$('radioMicState'),radioTxState:$('radioTxState'),
   hardwareLearn:$('hardwareLearn'),hardwareClear:$('hardwareClear'),hardwareEnabled:$('hardwareEnabled'),
   hardwareStatus:$('hardwareStatus'),hardwareLog:$('hardwareLog'),hardwareStop:$('hardwareStop'),
@@ -182,7 +182,8 @@ let pttSide=storeGet(RADIO_HAND_KEY,'right')==='left'?'left':'right';
 const SCAN_STEP_MS=1400,SCAN_HOLD_MS=2400;
 let joinInProgress=0;
 const diagnosticEvents=[];
-const DIAGNOSTIC_LIMIT=150;
+const DIAGNOSTIC_LIMIT=500;
+const toneStats={requested:0,scheduled:0,ended:0,failed:0,skipped:0,lastKind:'none',lastResult:'none'};
 /* Optional text alongside PTT voice. Recognition is independent of PeerJS media.
  * Each speaker recognizes their own mic, then broadcasts FINAL strings through the
  * already-established room data connections. No voice streams are renegotiated.
@@ -244,7 +245,7 @@ function speechDiagnosticReport(){
     s.room.title+': '+(s.track?.readyState||'no track')+', enabled='+Boolean(s.track?.enabled)+
     ', transmitting='+Boolean(s.transmitting)+', floor='+Boolean(s.floor===s.myId));
   return [
-    'Relay One V6.13 speech diagnostics',
+    'Relay One V6.14 speech diagnostics',
     'Transcription engine: '+transcriptMode,
     'On-device model state: '+asrState,
     'On-device recording active: '+Boolean(asrActive),
@@ -352,12 +353,12 @@ function runSpeechTest(){
 }
 ui.speechTest?.addEventListener('click',runSpeechTest);
 ui.speechCopyDiagnostics?.addEventListener('click',async()=>{
-  const report=speechDiagnosticReport();
+  const report=diagnosticReport();
   try{
     if(!navigator.clipboard?.writeText)throw Error('No clipboard API');
     await navigator.clipboard.writeText(report);
-    transcriptStatus('Speech diagnostics copied. Paste them here to troubleshoot.');
-  }catch{window.prompt('Copy speech-to-text diagnostics:',report);}
+    transcriptStatus('Global diagnostics copied. Paste them here to troubleshoot.');
+  }catch{window.prompt('Copy global diagnostics:',report);}
 });
 renderSpeechDiagnostics();
 
@@ -858,6 +859,7 @@ function logRadio(event,channel='',detail=''){
   if(ui.diagnostics)ui.diagnostics.textContent=diagnosticEvents.join('\n');
   // Avoid logging callsigns, room IDs, PINs, conversation content, or microphone recordings.
 }
+// Global export: every new feature must register its state and events here or in a section below.
 function diagnosticReport(){
   const connection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
   const kind=connection?.effectiveType||'unavailable';
@@ -866,10 +868,27 @@ function diagnosticReport(){
     const audio=peers.filter(m=>m.stream).length;
     const ice=peers.map(m=>m.call?.peerConnection?.iceConnectionState||'none').join(',');
     return s.room.title+': signaling '+(s.ready()?'ready':'waiting')+
-      ', voice '+audio+'/'+peers.length+', ICE '+ice;
+      ', voice '+audio+'/'+peers.length+', ICE '+ice+
+      ', monitor='+s.monitor+', wants Talk='+s.wantTalk+', TX='+s.transmitting+
+      ', outgoing track='+ (s.track?.readyState||'none')+', enabled='+Boolean(s.track?.enabled)+
+      ', floor='+(!s.floor?'idle':s.floor===s.myId?'local':'remote')+
+      ', standby context='+(s.pttContext?.state||'none');
   });
   const data=usageMeter.snapshot();
-  return ['Relay One V6.13 connection diagnostics',
+  return ['Relay One V6.14 global diagnostics',
+    'Browser: '+(navigator.userAgent||'not exposed'),
+    'Secure context: '+Boolean(window.isSecureContext),
+    'Page visible: '+!document.hidden,
+    'Focused channel: '+(sessions.get(focusedId)?.room.title||'none'),
+    'Scan enabled: '+scanEnabled,
+    'PTT side: '+pttSide,
+    'Joining channels: '+joinInProgress,
+    'TX squawk: '+profile.txTone+'; RX squawk: '+profile.rxTone+'; call alerts: '+profile.alertTone,
+    'Ready cue enabled: '+pttReadyCue,
+    'Alert AudioContext: '+(alertContext?.state||'not created'),
+    'Audio output routing: browser/OS default; physical headset route not exposed reliably',
+    'Tone requests: '+toneStats.requested+'; scheduled: '+toneStats.scheduled+'; ended: '+toneStats.ended+'; failed: '+toneStats.failed+'; skipped: '+toneStats.skipped,
+    'Last tone: '+toneStats.lastKind+'; '+toneStats.lastResult,
     'Radio mode: '+radioMode,
     'Estimated WebRTC session: sent '+formatDataBytes(data.session.tx)+', received '+formatDataBytes(data.session.rx),
     'Estimated saved: sent '+formatDataBytes(data.saved.tx)+', received '+formatDataBytes(data.saved.rx),
@@ -883,10 +902,12 @@ if(ui.copyDiagnostics)ui.copyDiagnostics.addEventListener('click',async()=>{
   const report=diagnosticReport();
   try{if(!navigator.clipboard?.writeText)throw Error('Clipboard unavailable');
     await navigator.clipboard.writeText(report);setMessage('Diagnostic log copied. You can paste it here for analysis.');
-  }catch{window.prompt('Copy connection diagnostics:',report);}
+  }catch{window.prompt('Copy global diagnostics:',report);}
 });
 if(ui.clearDiagnostics)ui.clearDiagnostics.addEventListener('click',()=>{
-  diagnosticEvents.length=0;if(ui.diagnostics)ui.diagnostics.textContent='Diagnostic log cleared.';
+  diagnosticEvents.length=0;speechEvents.length=0;externalEvents.length=0;
+  renderSpeechDiagnostics();renderExternalPTT();
+  if(ui.diagnostics)ui.diagnostics.textContent='All event logs cleared. Session counters retained.';
 });
 window.addEventListener('offline',()=>logRadio('BROWSER OFFLINE','','Browser reports internet unavailable'));
 window.addEventListener('online',()=>logRadio('BROWSER ONLINE','','Browser reports internet reachable'));
@@ -894,33 +915,63 @@ const connectionInfo=navigator.connection||navigator.mozConnection||navigator.we
 connectionInfo?.addEventListener?.('change',()=>{
   logRadio('NETWORK TYPE CHANGE','',connectionInfo.effectiveType||'type not exposed');
 });
-logRadio('RADIO START','','Connection diagnostics enabled; no PINs, IDs or audio recorded');
-const makeCtx=()=>{if(!alertContext){const C=window.AudioContext||window.webkitAudioContext;if(C)alertContext=new C();}return alertContext;};
-function unlockSound(){try{const ctx=makeCtx();if(ctx?.state==='suspended')void ctx.resume().catch(()=>{});}catch{}}
-function playTone(kind){
+logRadio('RADIO START','','Global diagnostics enabled; no PINs, IDs or audio recorded');
+const makeCtx=()=>{if(!alertContext||alertContext.state==='closed'){const C=window.AudioContext||window.webkitAudioContext;if(C)alertContext=new C();}return alertContext;};
+function unlockSound(){
   try{
-    unlockSound();
-    const ctx=alertContext;
-    if(!ctx || ctx.state!=='running')return;
-    const start=ctx.currentTime+0.02;
-    const bursts=kind==='call'?[{at:0,len:0.24,hz:960},{at:.32,len:.24,hz:960}]:
-      kind==='ready'?[{at:0,len:.095,hz:1180}]:
-      kind==='toggle-stop'?[{at:0,len:.12,hz:560}]:[{at:0,len:.18,hz:880}];
-    for(const b of bursts){
-      const osc=ctx.createOscillator(),gain=ctx.createGain();
-      osc.type=['call','ready','toggle-stop'].includes(kind)?'sine':'square';
-      osc.frequency.setValueAtTime(b.hz,start+b.at);
-      if(kind==='squawk')osc.frequency.exponentialRampToValueAtTime(530,start+b.at+b.len);
-      const volume=['ready','toggle-stop'].includes(kind)?.06:.11;
-      gain.gain.setValueAtTime(.001,start+b.at);
-      gain.gain.linearRampToValueAtTime(volume,start+b.at+.018);
-      gain.gain.setValueAtTime(volume,start+b.at+b.len-.04);
-      gain.gain.exponentialRampToValueAtTime(.001,start+b.at+b.len);
-      osc.connect(gain);gain.connect(ctx.destination);
-      osc.start(start+b.at);osc.stop(start+b.at+b.len+.01);
+    const ctx=makeCtx();
+    if(ctx && ctx.state!=='running'){
+      return Promise.resolve(ctx.resume()).then(()=>{
+        logRadio('AUDIO CONTEXT','','Resume result: '+ctx.state);return ctx;
+      },err=>{logRadio('AUDIO CONTEXT ERROR','',err?.name||'resume failed');return ctx;});
     }
-  }catch(err){console.warn('Sound playback unavailable',err);}
+    return Promise.resolve(ctx);
+  }catch(err){logRadio('AUDIO CONTEXT ERROR','',err?.name||'unavailable');return Promise.resolve(null);}
 }
+function playTone(kind,stillValid=()=>true){
+  toneStats.requested++;toneStats.lastKind=kind;toneStats.lastResult='requested';
+  logRadio('TONE REQUEST','',kind+'; context '+(alertContext?.state||'not created'));
+  const finish=(type,detail)=>{
+    toneStats[type]++;toneStats.lastKind=kind;toneStats.lastResult=type+': '+detail;
+    logRadio('TONE '+type.toUpperCase(),'',kind+'; '+detail);
+  };
+  const schedule=ctx=>{
+    if(!stillValid()){finish('skipped','transmission no longer active');return;}
+    if(!ctx||ctx.state!=='running'){finish('failed','context '+(ctx?.state||'unavailable'));return;}
+    try{
+      const start=ctx.currentTime+0.02;
+      const bursts=kind==='call'?[{at:0,len:0.24,hz:960},{at:.32,len:.24,hz:960}]:
+        kind==='ready'?[{at:0,len:.19,hz:1180}]:
+        kind==='toggle-stop'?[{at:0,len:.12,hz:560}]:[{at:0,len:.18,hz:880}];
+      for(const [i,b] of bursts.entries()){
+        const osc=ctx.createOscillator(),gain=ctx.createGain();
+        osc.type=['call','ready','toggle-stop'].includes(kind)?'sine':'square';
+        osc.frequency.setValueAtTime(b.hz,start+b.at);
+        if(kind==='squawk')osc.frequency.exponentialRampToValueAtTime(530,start+b.at+b.len);
+        const volume=kind==='ready'?.18:kind==='toggle-stop'?.06:.11;
+        gain.gain.setValueAtTime(.001,start+b.at);
+        gain.gain.linearRampToValueAtTime(volume,start+b.at+.018);
+        gain.gain.setValueAtTime(volume,start+b.at+b.len-.04);
+        gain.gain.exponentialRampToValueAtTime(.001,start+b.at+b.len);
+        osc.connect(gain);gain.connect(ctx.destination);
+        osc.onended=()=>{
+          try{osc.disconnect?.();gain.disconnect?.();}catch{}
+          if(i===bursts.length-1)finish('ended','Web Audio oscillator ended; audibility not verified');
+        };
+        osc.start(start+b.at);osc.stop(start+b.at+b.len+.01);
+      }
+      finish('scheduled','Web Audio output; '+bursts.length+' burst(s)');
+    }catch(err){finish('failed',err?.name||'sound playback error');}
+  };
+  if(alertContext?.state==='running'){schedule(alertContext);return;}
+  // Resume may be asynchronous on Android; never discard a ready cue just because resume is pending.
+  void unlockSound().then(schedule);
+}
+ui.testReadyCue?.addEventListener('click',()=>{
+  if(selectedTx){setMessage('Release Talk before testing the ready beep.');return;}
+  playTone('ready',()=>!selectedTx);
+  setMessage('Ready beep test requested. Check global diagnostics if you cannot hear it.');
+});
 function persistDesired(){storeSet(ACTIVE_KEY,[...desiredJoined]);}
 function persistMonitors(){storeSet(MONITOR_KEY,monitorPrefs);}
 function reportError(message){ui.error.textContent=message;ui.error.classList.remove('hidden');logRadio('ERROR','',message);}
@@ -974,7 +1025,7 @@ function renderMicMode(){
   if(ui.pttOnlyMicrophone){ui.pttOnlyMicrophone.checked=pttOnlyMicrophone;ui.pttOnlyMicrophone.disabled=micModeChanging||Boolean(selectedTx);}
   if(ui.pttReadyCue){
     ui.pttReadyCue.checked=pttReadyCue;
-    ui.pttReadyCue.disabled=!pttOnlyMicrophone;
+    ui.pttReadyCue.disabled=false;
   }
   if(ui.micModeStatus)ui.micModeStatus.textContent=micStateSummary();
   if(ui.micDelayStatus)ui.micDelayStatus.textContent=pttOnlyMicrophone?
@@ -1082,6 +1133,7 @@ ui.pttOnlyMicrophone?.addEventListener('change',()=>{void setPTTOnlyMicrophone(u
 ui.pttReadyCue?.addEventListener('change',()=>{
   pttReadyCue=Boolean(ui.pttReadyCue.checked);
   storeSet(PTT_READY_CUE_KEY,pttReadyCue);
+  logRadio('READY CUE SETTING','',pttReadyCue?'enabled':'disabled');
   renderMicMode();
 });
 renderMicMode();
@@ -1250,7 +1302,8 @@ function renderExternalPTT(){
 }
 function externalEvent(kind,detail=''){
   externalEvents.push([new Date().toISOString(),kind,detail].filter(Boolean).join(' | '));
-  if(externalEvents.length>40)externalEvents.shift();
+  if(externalEvents.length>150)externalEvents.shift();
+  logRadio('HEADSET '+kind,'',detail);
   renderExternalPTT();
 }
 function saveExternalPTT(){storeSet(EXTERNAL_PTT_KEY,{binding:externalBinding,enabled:externalEnabled,mode:externalMode});}
@@ -1395,7 +1448,7 @@ async function checkExternalAudio(){
   }
 }
 function hardwareDiagnosticReport(){
-  return ['Relay One V6.13 external PTT diagnostics',
+  return ['Relay One V6.14 external PTT diagnostics',
     'Recorded: '+new Date().toISOString(),'Browser: '+(navigator.userAgent||'not exposed'),
     'Page visible: '+!document.hidden,'Detection active: '+externalLearning,
     'Detected binding: '+externalLabel(externalBinding),
@@ -1418,14 +1471,15 @@ ui.hardwareClear?.addEventListener('click',resetExternalBinding);
 ui.hardwareEnabled?.addEventListener('change',()=>setExternalEnabled(ui.hardwareEnabled.checked));
 ui.hardwareAudioCheck?.addEventListener('click',()=>{void checkExternalAudio();});
 ui.hardwareCopy?.addEventListener('click',async()=>{
-  const report=hardwareDiagnosticReport();
-  try{await navigator.clipboard.writeText(report);externalMessage='Hardware diagnostics copied.';renderExternalPTT();}
-  catch{window.prompt('Copy hardware diagnostics:',report);}
+  const report=diagnosticReport();
+  try{await navigator.clipboard.writeText(report);externalMessage='Global diagnostics copied.';renderExternalPTT();}
+  catch{window.prompt('Copy global diagnostics:',report);}
 });
 window.addEventListener('keydown',externalKeyDown,true);
 window.addEventListener('keyup',externalKeyUp,true);
 renderExternalPTT();
-
+void checkExternalAudio();
+navigator.mediaDevices?.addEventListener?.('devicechange',()=>{void checkExternalAudio();});
 
 function bindHold(button,resolve){
   button.addEventListener('pointerdown',e=>{
@@ -1535,8 +1589,10 @@ class ChannelSession{
           pttTiming.lastReadyMs=time;pttTiming.readyCount++;
           speechEvent('PTT TRANSMIT READY','after '+time+' ms from press');
           renderMicMode();
-          if(pttReadyCue)playTone('ready');
-        }
+          }
+        logRadio('TRANSMIT READY',this.room.title,this.pttMode?'PTT-only microphone ready':'Always-ready microphone');
+        if(pttReadyCue)playTone('ready',()=>this.transmitting&&selectedTx===this&&this.wantTalk);
+        else logRadio('TONE DISABLED',this.room.title,'Ready cue disabled');
         speechDidTransmit(this);updateRow(this.publicId);updateQuick();
       }
     };
