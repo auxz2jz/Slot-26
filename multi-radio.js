@@ -30,6 +30,7 @@ const ui = {
   radioJoin:$('radioJoin'),radioMonitor:$('radioMonitor'),radioCall:$('radioCall'),
   radioScan:$('radioScan'),leftHanded:$('leftHanded'),rightHanded:$('rightHanded'),
   pttOnlyMicrophone:$('pttOnlyMicrophone'),micModeStatus:$('micModeStatus'),
+  pttReadyCue:$('pttReadyCue'),micDelayStatus:$('micDelayStatus'),
   transcriptEnabled:$('transcriptEnabled'),transcriptKeep:$('transcriptKeep'),
   transcriptStatus:$('transcriptStatus'),transcriptLog:$('transcriptLog'),
   transcriptCount:$('transcriptCount'),transcriptCopy:$('transcriptCopy'),
@@ -48,6 +49,7 @@ const LAYOUT_KEY='relay-one.layout.v6.2';
 const RADIO_MODE_KEY='relay-one.radio-mode.v6.3';
 const RADIO_SCAN_KEY='relay-one.scan.v6.4', RADIO_HAND_KEY='relay-one.ptt-side.v6.4';
 const PTT_MIC_MODE_KEY='relay-one.ptt-only-microphone.v6.8';
+const PTT_READY_CUE_KEY='relay-one.ptt-ready-cue.v6.9';
 const TRANSCRIPT_ENABLED_KEY='relay-one.transcribe.v6.5';
 const TRANSCRIPT_ENGINE_KEY='relay-one.transcript-engine.v6.7';
 const TRANSCRIPT_KEEP_KEY='relay-one.transcript-keep.v6.5';
@@ -157,6 +159,9 @@ renderDataUsage();
 setInterval(()=>{void sampleDataUsage();},4000);
 let focusedId=null, selectedTx=null, microphone=null, micPromise=null, alertContext=null;
 let pttOnlyMicrophone=storeGet(PTT_MIC_MODE_KEY,false)===true;
+let pttReadyCue=storeGet(PTT_READY_CUE_KEY,true)!==false;
+const pttTiming={presses:0,readyCount:0,lastMicMs:null,lastReadyMs:null,slowMic:0,
+  cancelledBeforeReady:0};
 let standbyAudioContext=null;
 // The center LCD may sweep through joined channels; PTT always has a fixed, visible target.
 let viewId=channels[0].id;
@@ -228,7 +233,13 @@ function speechDiagnosticReport(){
     s.room.title+': '+(s.track?.readyState||'no track')+', enabled='+Boolean(s.track?.enabled)+
     ', transmitting='+Boolean(s.transmitting)+', floor='+Boolean(s.floor===s.myId));
   return [
-    'Relay One V6.8 speech diagnostics',
+    'Relay One V6.9 speech diagnostics',
+    'PTT-only mic presses: '+pttTiming.presses,
+    'PTT-only completed transmit activations: '+pttTiming.readyCount,
+    'PTT-only last mic acquired after: '+(pttTiming.lastMicMs===null?'not measured':pttTiming.lastMicMs+' ms'),
+    'PTT-only last transmitting after: '+(pttTiming.lastReadyMs===null?'not measured':pttTiming.lastReadyMs+' ms'),
+    'PTT-only presses released before ready: '+pttTiming.cancelledBeforeReady,
+    'PTT-only slow mic activations (1 sec+): '+pttTiming.slowMic,
     'Transcription engine: '+transcriptMode,
     'On-device model state: '+asrState,
     'On-device recording active: '+Boolean(asrActive),
@@ -850,7 +861,7 @@ function diagnosticReport(){
       ', voice '+audio+'/'+peers.length+', ICE '+ice;
   });
   const data=usageMeter.snapshot();
-  return ['Relay One V6.8 connection diagnostics',
+  return ['Relay One V6.9 connection diagnostics',
     'Microphone mode: '+(pttOnlyMicrophone?'PTT only':'always ready'),
     'Radio mode: '+radioMode,
     'Estimated WebRTC session: sent '+formatDataBytes(data.session.tx)+', received '+formatDataBytes(data.session.rx),
@@ -958,7 +969,17 @@ function micStateSummary(){
 }
 function renderMicMode(){
   if(ui.pttOnlyMicrophone)ui.pttOnlyMicrophone.checked=pttOnlyMicrophone;
+  if(ui.pttReadyCue){
+    ui.pttReadyCue.checked=pttReadyCue;
+    ui.pttReadyCue.disabled=!pttOnlyMicrophone;
+  }
   if(ui.micModeStatus)ui.micModeStatus.textContent=micStateSummary();
+  if(ui.micDelayStatus)ui.micDelayStatus.textContent=pttOnlyMicrophone?
+    (pttTiming.lastReadyMs===null?'PTT-only: hold Talk until TRANSMITTING. Startup time is measured after your first press.':
+    'Last PTT-only start-up: '+pttTiming.lastReadyMs+' ms to transmit'+
+    (pttTiming.lastMicMs===null?'':'; physical mic ready in '+pttTiming.lastMicMs+' ms')+
+    '. Wait for TRANSMITTING'+(pttReadyCue?' or the beep':'')+' before speaking.'):
+    'Always-ready mode gives the fastest talk start; the microphone remains muted while idle.';
 }
 function makeStandbyAudio(){
   const C=window.AudioContext||window.webkitAudioContext;
@@ -1005,11 +1026,15 @@ async function preparePTTMicrophone(session){
       logRadio('PTT MIC CANCELLED',session.room.title,'Late microphone permission or quick release');
       return;
     }
+    const micMs=Math.max(0,Date.now()-session.pttPressedAt);
+    pttTiming.lastMicMs=micMs;
+    if(micMs>=1000)pttTiming.slowMic++;
+    speechEvent('PTT MIC ACQUIRED','after '+micMs+' ms (device microphone ready)');
     const input=session.pttContext.createMediaStreamSource(stream);
     try{input.connect(session.pttDestination);}
     catch(error){input.disconnect();stream.getTracks().forEach(track=>track.stop());throw error;}
     session.pttInputStream=stream;session.pttInputNode=input;
-    logRadio('PTT MIC ON',session.room.title,'Input ready for radio floor');
+    logRadio('PTT MIC ON',session.room.title,'Input ready after '+micMs+' ms');
     session.transmitIfAllowed(false);
     renderMicMode();
   }catch(error){
@@ -1048,6 +1073,11 @@ async function setPTTOnlyMicrophone(enabled){
   renderMicMode();
 }
 ui.pttOnlyMicrophone?.addEventListener('change',()=>{void setPTTOnlyMicrophone(ui.pttOnlyMicrophone.checked);});
+ui.pttReadyCue?.addEventListener('change',()=>{
+  pttReadyCue=Boolean(ui.pttReadyCue.checked);
+  storeSet(PTT_READY_CUE_KEY,pttReadyCue);
+  renderMicMode();
+});
 renderMicMode();
 
 async function ensureMicrophone(){
@@ -1161,6 +1191,9 @@ function startPTT(s){
   if(speechTestCapture)stopSpeechTest();
   unlockSound();selectedTx=s;s.wantTalk=true;logRadio('PTT PRESSED',s.room.title);
   if(s.pttMode){
+    s.pttPressedAt=Date.now();
+    pttTiming.presses++;
+    speechEvent('PTT MIC PRESS','PTT-only mode; acquiring microphone on demand');
     try{void s.pttContext?.resume();}catch{}
     void preparePTTMicrophone(s);
   }
@@ -1173,6 +1206,10 @@ function startPTT(s){
 }
 function releaseTalk(s){
   if(!s)return;
+  if(s.pttMode && !s.transmitting){
+    pttTiming.cancelledBeforeReady++;
+    speechEvent('PTT ENDED BEFORE READY','release without active transmission');
+  }
   s.wantTalk=false;endSpeechCapture(s);s.disableTransmit();
   speechStats.lastPTT='released '+s.room.title;
   speechEvent('PTT RELEASED','voice track disabled');
@@ -1224,6 +1261,7 @@ class ChannelSession{
     this.pttMode=false;this.pttContext=null;this.pttDestination=null;
     this.pttInputNode=null;this.pttInputStream=null;this.pttMicPending=null;
     this.pttMicSerial=0;this.pttSilence=null;this.pttZero=null;
+    this.pttPressedAt=0;
     this.peer=null;this.myId=null;this.isHost=false;this.members=new Map;this.roster=new Set;
     this.floor=null;this.floorAt=0;this.wantTalk=false;this.transmitting=false;
     this.generation=0;this.stopped=false;this.status='Connecting';this.note='Connecting to signaling…';
@@ -1286,7 +1324,15 @@ class ChannelSession{
           updateRow(this.publicId);updateQuick();return;
         }
         if(this.transmitting)return;
-        this.track.enabled=true;this.transmitting=true;speechDidTransmit(this);updateRow(this.publicId);updateQuick();
+        this.track.enabled=true;this.transmitting=true;
+        if(this.pttMode){
+          const time=Math.max(0,Date.now()-this.pttPressedAt);
+          pttTiming.lastReadyMs=time;pttTiming.readyCount++;
+          speechEvent('PTT TRANSMIT READY','after '+time+' ms from press');
+          renderMicMode();
+          if(pttReadyCue)playTone('ready');
+        }
+        speechDidTransmit(this);updateRow(this.publicId);updateQuick();
       }
     };
     if(newFloor && profile.txTone)this.toneTimer=setTimeout(open,290);
@@ -1724,7 +1770,9 @@ function updateRow(id){
   const canSpeak=isActive&&s.ready()&&(!selectedTx||selectedTx===s)&&(!s.floor||s.floor===s.myId);
   r.ptt.disabled=!canSpeak;
   r.ptt.classList.toggle('sending',Boolean(s?.transmitting));
-  r.ptt.textContent=s?.transmitting?'TRANSMITTING':s?.wantTalk?'REQUESTING…':'Hold Talk';
+  r.ptt.textContent=s?.transmitting?'TRANSMITTING':
+      s?.wantTalk&&s.pttMode&&!s.pttInputStream?'MIC STARTING…':
+      s?.wantTalk?'REQUESTING…':'Hold Talk';
   r.call.disabled=!isActive||!s.ready();
   const person=isActive && s.floor ? s.info(s.floor):null;
   r.speaker.textContent=!isActive?'Join to see this channel':person?'ON AIR: '+person.name:(s.monitor?'Channel idle':'Monitoring off');
@@ -1848,7 +1896,9 @@ function renderRadioDisplay(){
   if(ui.quick){
     ui.quick.disabled=!target?.ready()||Boolean(selectedTx && selectedTx!==target)||
       Boolean(target.floor && target.floor!==target.myId);
-    ui.quickText.textContent=target?.transmitting?'TRANSMITTING':target?.wantTalk?'REQUESTING…':'HOLD TO TALK';
+    ui.quickText.textContent=target?.transmitting?'TRANSMITTING':
+      target?.wantTalk&&target.pttMode&&!target.pttInputStream?'MIC STARTING…':
+      target?.wantTalk?'REQUESTING…':'HOLD TO TALK';
   }
   if(ui.radioJoin){
     ui.radioJoin.textContent=scanEnabled?'SCAN ACTIVE':s?'LEAVE':'JOIN';
