@@ -1098,22 +1098,32 @@ async function joinChannel(c){
       pinCache.set(c.id,pin);
     }
     if(sessions.has(c.id) || !modeAllows(c))return;
-    const mic=await ensureMicrophone();
+    const mic=pttOnlyMicrophone?null:await ensureMicrophone();
     if(!modeAllows(c) || sessions.size>=maxActiveChannels())return;
-    const source=mic.getAudioTracks()[0];
-    const track=source.clone();track.enabled=false;
-    // Every channel gets its own track and stream. Other channel tracks remain disabled.
-    const stream=new MediaStream([track]);
+    const standby=pttOnlyMicrophone?makeStandbyAudio():null;
+    const track=standby?standby.track:mic.getAudioTracks()[0].clone();
+    track.enabled=false;
+    // In PTT-only mode a silent audio track keeps WebRTC alive without owning a mic.
+    const stream=standby?standby.stream:new MediaStream([track]);
     const session=new ChannelSession(c,roomId,track,stream,monitorValue(c.id));
+    session.pttMode=!!standby;
+    if(standby){
+      session.pttContext=standby.context;
+      session.pttDestination=standby.destination;
+      session.pttSilence=standby.source;
+      session.pttZero=standby.zero;
+    }
     sessions.set(c.id,session);
     desiredJoined.add(c.id);persistDesired();
     if(!sessions.has(focusedId))focusedId=c.id;
     session.start();
-    logRadio('CHANNEL JOIN',c.title,'New microphone track; independent WebRTC room');
+    logRadio('CHANNEL JOIN',c.title,pttOnlyMicrophone?
+      'Silent standby track; microphone not requested':'New microphone track; independent WebRTC room');
+    renderMicMode();
     setMessage('Joined '+c.title+'. Keep this page open while using the radio.');
     updateAll();
   }catch(err){reportError(err?.message||'Cannot start the channel.');setMessage('Unable to join '+c.title);}
-  finally{joinInProgress--;releaseMicrophoneIfUnused();}
+  finally{joinInProgress--;releaseMicrophoneIfUnused();closeStandbyAudioIfUnused();}
 }
 function leaveChannel(id){
   const s=sessions.get(id);
@@ -1123,7 +1133,7 @@ function leaveChannel(id){
   if(focusedId===id)focusedId=viewId===id?null:(sessions.keys().next().value||null);
   if(scanPreviewId===id)scanPreviewId=null;
   if(scanActivityId===id)scanActivityId=null;
-  releaseMicrophoneIfUnused();scanTick();updateAll();
+  releaseMicrophoneIfUnused();closeStandbyAudioIfUnused();renderMicMode();scanTick();updateAll();
 }
 async function restoreJoined(){
   const ids=[...desiredJoined].filter(id=>modeAllows(storedRoom(id))).slice(0,maxActiveChannels());
@@ -1148,6 +1158,11 @@ function startPTT(s){
   if(!s || !s.ready() || selectedTx && selectedTx!==s || s.floor && s.floor!==s.myId)return;
   if(speechTestCapture)stopSpeechTest();
   unlockSound();selectedTx=s;s.wantTalk=true;logRadio('PTT PRESSED',s.room.title);
+  if(s.pttMode){
+    try{void s.pttContext?.resume();}catch{}
+    void preparePTTMicrophone(s);
+  }
+  renderMicMode();
   for(const other of sessions.values())other.applyAudioOutput();
   if(s.isHost){if(!s.floor)s.setFloor(s.myId,profile.txTone);}
   else s.send(s.hostId(),{type:'request',tone:profile.txTone});
@@ -1156,11 +1171,12 @@ function startPTT(s){
 }
 function releaseTalk(s){
   if(!s)return;
-  s.wantTalk=false;s.disableTransmit();endSpeechCapture(s);
+  s.wantTalk=false;endSpeechCapture(s);s.disableTransmit();
   speechStats.lastPTT='released '+s.room.title;
   speechEvent('PTT RELEASED','voice track disabled');
   logRadio('PTT RELEASED',s.room.title);
   if(selectedTx===s)selectedTx=null;
+  renderMicMode();
   if(transcriptPopupPending && autoTranscriptPopup){
     transcriptPopupPending=false;
     openTranscriptPopup();
@@ -1196,6 +1212,9 @@ class ChannelSession{
   constructor(publicRoom,effectiveId,track,stream,monitor){
     this.room=publicRoom;this.publicId=publicRoom.id;this.id=effectiveId;
     this.track=track;this.stream=stream;this.monitor=monitor;
+    this.pttMode=false;this.pttContext=null;this.pttDestination=null;
+    this.pttInputNode=null;this.pttInputStream=null;this.pttMicPending=null;
+    this.pttMicSerial=0;this.pttSilence=null;this.pttZero=null;
     this.peer=null;this.myId=null;this.isHost=false;this.members=new Map;this.roster=new Set;
     this.floor=null;this.floorAt=0;this.wantTalk=false;this.transmitting=false;
     this.generation=0;this.stopped=false;this.status='Connecting';this.note='Connecting to signaling…';
@@ -1242,7 +1261,9 @@ class ChannelSession{
   }
   disableTransmit(){
     if(this.toneTimer){clearTimeout(this.toneTimer);this.toneTimer=null;}
+    if(this.pttMode && this.transmitting)endSpeechCapture(this);
     this.track.enabled=false;this.transmitting=false;
+    if(this.pttMode)releasePTTMicrophone(this);
   }
   transmitIfAllowed(newFloor){
     if(!this.wantTalk || selectedTx!==this || this.floor!==this.myId)return;
@@ -1250,6 +1271,12 @@ class ChannelSession{
     const open=()=>{
       this.toneTimer=null;
       if(this.wantTalk && selectedTx===this && this.floor===this.myId && !this.stopped){
+        if(this.pttMode && !this.pttInputStream){
+          this.note='Waiting for microphone to activate…';
+          logRadio('PTT MIC WAIT',this.room.title,'Holding floor until input is ready');
+          updateRow(this.publicId);updateQuick();return;
+        }
+        if(this.transmitting)return;
         this.track.enabled=true;this.transmitting=true;speechDidTransmit(this);updateRow(this.publicId);updateQuick();
       }
     };
@@ -1310,6 +1337,10 @@ class ChannelSession{
     if(this.signalingRetry)clearTimeout(this.signalingRetry);
     this.disableTransmit();this.closePeer();
     try{this.track.stop();}catch{}
+    if(this.pttMode){
+      try{this.pttSilence?.stop();this.pttSilence?.disconnect();}catch{}
+      try{this.pttZero?.disconnect();}catch{}
+    }
   }
   start(){
     this.heartbeat=setInterval(()=>this.tick(),PING_EVERY);
