@@ -277,3 +277,12 @@ body.radio-compact .group-people,body.radio-compact .group-msg{display:none}
 #hardwareStatus{color:#a9ead3;font-weight:650;overflow-wrap:anywhere}
 #hardwareLog{max-height:165px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:11px}
 .hardware-ptt .hardware-stop:not(:disabled){background:#8b292f;color:#fff;border-color:#c95b60;font-weight:750}
+
+/* V6.13 distinguish ready, pending and active TX, including hardware PTT. */
+.radio-state-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:10px 0}
+.radio-state{border:1px solid #52666f;border-radius:8px;background:#263944;color:#c6d3d7;min-width:0;padding:8px 5px;text-align:center;display:flex;flex-direction:column;gap:4px}
+.radio-state span{font-size:9px;letter-spacing:.04em;font-weight:750}.radio-state strong{font-size:10px;line-height:1.25;overflow-wrap:anywhere}
+.radio-state[data-state=connected]{background:#174937;color:#b7f2ca;border-color:#53c68a}.radio-state[data-state=ready]{background:#193b64;color:#c5e2ff;border-color:#699dd7}.radio-state[data-state=pending]{background:#63481c;color:#ffdda1;border-color:#e8ae53}.radio-state[data-state=sending]{background:#8c202b;color:#fff;border-color:#ff7781;box-shadow:0 0 9px #ee586775}
+.handheld-ptt:not(:disabled){background:linear-gradient(155deg,#365064,#263b49);border-color:#6f8ca2;color:#d6e6f3;box-shadow:0 0 0 4px #203b49,0 5px 15px #061a22}
+.handheld-ptt.tx-pending:not(:disabled){background:#9a661d;border-color:#ffd083;color:#fff2cb}.handheld-ptt.tx-live:not(:disabled){background:#b32738;border-color:#ff9ba3;color:#fff;box-shadow:0 0 0 4px #7b2836,0 0 22px #e84d6280}
+.radio-lcd.transmitting{border-color:#ff7781;box-shadow:inset 0 0 22px #742b36,0 0 0 1px #ff7781}.radio-lcd.transmitting #screenScan{color:#ff9ba3}

@@ -119,7 +119,7 @@ const environmentNames=[
   'URLSearchParams','Worker','setTimeout','clearTimeout','setInterval','clearInterval'
 ];
 const appFactory=new Function(...utilityNames,...environmentNames,source+
-  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,setTranscriptMode,loadLocalAsr,hardwareDiagnosticReport,getAsrState:()=>asrState,getAsrStats:()=>asrStats,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
+  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,setTranscriptMode,loadLocalAsr,hardwareDiagnosticReport,setPTTOnlyMicrophone,getPTTOnlyMicrophone:()=>pttOnlyMicrophone,getAsrState:()=>asrState,getAsrStats:()=>asrStats,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
 const utilsForTest={
   ...utils,...presets,WebRTCUsageMeter,formatDataBytes,
   checkChannelPin:(channel,pin)=>presets.checkChannelPin(channel,pin,webcrypto),
@@ -691,4 +691,161 @@ test('V6.12: external toggle fails closed on focus loss or watchdog',async()=>{
   assert.ok(watchdog);watchdog[1]();flush();assert.equal(s.transmitting,false);
   assert.match(a.hardwareDiagnosticReport(),/Safety timeouts: 1/);
   a.leaveChannel(c.id);
+});
+
+test('V6.8: PTT-only microphone never opens hardware on join and releases it after each press',async()=>{
+  const channel=presets.CHANNEL_PRESETS[0];
+  const radio=browser('PTT Only',[],true,{pttMic:true});
+  await radio.setPTTOnlyMicrophone(true);flush();
+  assert.equal(radio.getPTTOnlyMicrophone(),true);
+  assert.equal(radio.ui.pttOnlyMicrophone.checked,true);
+  await radio.joinChannel(channel);flush();
+  const s=radio.sessions.get(channel.id);
+  assert.equal(radio.mediaRequests.length,0,'join must not call getUserMedia');
+  assert.equal(s.track.readyState,'live','silent WebRTC track stays available');
+  assert.equal(s.track.enabled,false);
+  radio.startPTT(s);flush();
+  assert.equal(s.track.enabled,false,'audio waits until microphone permission is granted');
+  await Promise.resolve();flush();
+  assert.equal(radio.mediaRequests.length,1,'first Talk opens real mic exactly once');
+  assert.equal(radio.mediaRequests[0].readyState,'live');
+  assert.equal(s.track.enabled,true,'mic is routed to the existing channel track when ready');
+  assert.equal(s.transmitting,true);
+  radio.releaseTalk(s);flush();
+  assert.equal(radio.mediaRequests[0].readyState,'ended','hardware microphone must be stopped on release');
+  assert.equal(s.track.readyState,'live','WebRTC standby placeholder remains live after release');
+  assert.equal(s.track.enabled,false);
+  assert.equal(s.pttInputStream,null);
+  radio.startPTT(s);flush();
+  await Promise.resolve();flush();
+  assert.equal(radio.mediaRequests.length,2,'second Talk must reacquire mic');
+  assert.equal(s.track.enabled,true);
+  radio.releaseTalk(s);flush();
+  assert.equal(radio.mediaRequests[1].readyState,'ended');
+  radio.leaveChannel(channel.id);
+  assert.equal(s.track.readyState,'ended','session should release silent placeholder on leave');
+});
+test('V6.8: releasing Talk before microphone grant cancels capture and never opens transmitting audio',async()=>{
+  const channel=presets.CHANNEL_PRESETS[0];
+  const radio=browser('Quick tap',[],true,{pttMic:true,deferMic:true});
+  await radio.setPTTOnlyMicrophone(true);
+  await radio.joinChannel(channel);flush();
+  const s=radio.sessions.get(channel.id);
+  radio.startPTT(s);flush();
+  assert.equal(s.track.enabled,false,'PTT waiting for permission');
+  radio.releaseTalk(s);flush();
+  assert.equal(s.track.enabled,false);
+  radio.resolveNextMic();
+  await Promise.resolve();flush();
+  assert.equal(radio.mediaRequests[0].readyState,'ended','late mic approval immediately stops the hardware track');
+  assert.equal(s.track.enabled,false);
+  assert.equal(s.transmitting,false);
+  radio.leaveChannel(channel.id);
+});
+test('V6.8: switch microphone modes reconnects joined channels and restores original fast PTT behavior',async()=>{
+  const channel=presets.CHANNEL_PRESETS[0];
+  const radio=browser('Toggle test',[],true,{pttMic:true});
+  await radio.joinChannel(channel);flush();
+  const original=radio.sessions.get(channel.id);
+  assert.equal(radio.getPTTOnlyMicrophone(),false);
+  assert.equal(radio.mediaRequests.length,1,'default mode opens mic when joining');
+  await radio.setPTTOnlyMicrophone(true);flush();
+  const standby=radio.sessions.get(channel.id);
+  assert.notEqual(standby,original,'mode change reconnects once');
+  assert.equal(original.track.readyState,'ended');
+  assert.equal(radio.mediaRequests[0].readyState,'ended','old always-ready mic released');
+  assert.equal(radio.mediaRequests.length,1,'no mic request after switching to PTT only');
+  radio.startPTT(standby);flush();
+  await Promise.resolve();flush();
+  assert.equal(radio.mediaRequests.length,2);
+  radio.releaseTalk(standby);flush();
+  await radio.setPTTOnlyMicrophone(false);flush();
+  assert.equal(radio.getPTTOnlyMicrophone(),false);
+  assert.equal(radio.ui.pttOnlyMicrophone.checked,false);
+  assert.equal(radio.mediaRequests.length,3,'always-ready mode reacquires base microphone on rejoin');
+  const fast=radio.sessions.get(channel.id);
+  radio.startPTT(fast);flush();
+  assert.equal(fast.transmitting,true,'original fast PTT still works');
+  radio.releaseTalk(fast);
+  radio.leaveChannel(channel.id);
+});
+test('V6.8: on-demand microphone still supports delayed on-device Whisper with remote captions',async()=>{
+  const c=presets.CHANNEL_PRESETS[0];
+  const tx=browser('Patrol',[],true,{pttMic:true,local:true});
+  const rx=browser('Dispatch',[]);
+  await tx.setPTTOnlyMicrophone(true);
+  await tx.joinChannel(c);flush();
+  await rx.joinChannel(c);flush();
+  for(let i=0;i<3;i++){for(const tick of intervals.values())tick();flush();}
+  assert.equal(tx.mediaRequests.length,0);
+  tx.setTranscriptEnabled(true);
+  tx.loadLocalAsr();flush();
+  assert.equal(tx.getAsrState(),'ready');
+  const s=tx.sessions.get(c.id);
+  tx.startPTT(s);flush();
+  await Promise.resolve();flush();
+  assert.equal(s.transmitting,true);
+  assert.equal(tx.getAsrStats().recorded,1);
+  tx.releaseTalk(s);flush();
+  assert.equal(tx.mediaRequests[0].readyState,'ended','PTT-only releases mic before transcription');
+  for(let i=0;i<6;i++){await new Promise(resolve=>setTimeout(resolve,2));flush();}
+  assert.equal(tx.getAsrStats().completed,1);
+  assert.equal(tx.getTranscripts().length,1);
+  assert.equal(rx.getTranscripts().length,1);
+  assert.equal(rx.getTranscripts()[0].direction,'rx');
+  tx.leaveChannel(c.id);rx.leaveChannel(c.id);
+});
+
+test('V6.9: PTT-only shows microphone-starting until real audio becomes ready, then beeps once',async()=>{
+  const room=presets.CHANNEL_PRESETS[0];
+  const a=browser('Ready cue',[],true,{pttMic:true,deferMic:true});
+  await a.setPTTOnlyMicrophone(true);
+  await a.joinChannel(room);flush();
+  const s=a.sessions.get(room.id);
+  a.startPTT(s);flush();
+  assert.equal(s.transmitting,false);
+  assert.equal(a.ui.quickText.textContent,'MIC STARTING…','do not show transmitting before hardware mic is live');
+  assert.equal(a.toneStarts.length,0,'no ready beep while mic is still opening');
+  a.resolveNextMic();
+  await Promise.resolve();flush();
+  assert.equal(s.transmitting,true);
+  assert.equal(a.ui.quickText.textContent,'TRANSMITTING');
+  assert.equal(a.toneStarts.length,1,'one local ready sound after mic and floor become available');
+  assert.match(a.ui.micDelayStatus.textContent,/Last PTT-only start-up: \d+ ms/);
+  const report=a.speechDiagnosticReport();
+  assert.match(report,/PTT-only last mic acquired after: \d+ ms/);
+  assert.match(report,/PTT-only last transmitting after: \d+ ms/);
+  assert.match(report,/PTT MIC ACQUIRED/);
+  assert.match(report,/PTT TRANSMIT READY/);
+  a.releaseTalk(s);flush();
+  assert.equal(a.mediaRequests[0].readyState,'ended');
+  a.leaveChannel(room.id);
+});
+
+test('V6.13: independent headset and mic-off modes show idle, starting, live and released',async()=>{
+  const room=presets.CHANNEL_PRESETS[0],a=browser('Headset status',[],true,{pttMic:true,deferMic:true});
+  await a.setPTTOnlyMicrophone(true);await a.joinChannel(room);flush();
+  const s=a.sessions.get(room.id);
+  assert.equal(a.ui.radioConnectionState.dataset.state,'connected');
+  assert.equal(a.ui.radioMicState.dataset.state,'off');assert.equal(a.ui.radioTxState.dataset.state,'off');
+  a.ui.hardwareLearn.listeners.click[0]();buttonPulse(a);
+  a.ui.hardwareEnabled.checked=true;a.ui.hardwareEnabled.listeners.change[0]();
+  buttonPulse(a,{t:1000});
+  assert.equal(a.ui.radioMicState.dataset.state,'pending');assert.equal(a.ui.radioTxState.dataset.state,'pending');
+  assert.equal(a.ui.quick.classList.contains('tx-live'),false);assert.equal(s.transmitting,false);
+  a.resolveNextMic();await Promise.resolve();flush();
+  assert.equal(a.ui.radioMicState.dataset.state,'sending');assert.equal(a.ui.radioTxState.dataset.state,'sending');
+  assert.equal(a.ui.quick.classList.contains('tx-live'),true);
+  buttonPulse(a,{t:2000});assert.equal(a.mediaRequests[0].readyState,'ended');
+  assert.equal(a.ui.radioMicState.dataset.state,'off');assert.equal(a.ui.radioTxState.dataset.state,'off');
+  assert.equal(a.ui.radioConnectionState.dataset.state,'connected');
+  a.leaveChannel(room.id);
+});
+test('V6.13: always-ready shows ready muted separately from active transmit',async()=>{
+  const room=presets.CHANNEL_PRESETS[0],a=browser('Direct status',[]);
+  await a.joinChannel(room);flush();const s=a.sessions.get(room.id);
+  assert.equal(a.ui.radioMicState.dataset.state,'ready');assert.equal(a.ui.radioTxState.dataset.state,'off');
+  a.startPTT(s);flush();assert.equal(a.ui.radioTxState.dataset.state,'sending');
+  a.releaseTalk(s);flush();assert.equal(a.ui.radioMicState.dataset.state,'ready');assert.equal(a.ui.radioTxState.dataset.state,'off');
+  assert.equal(a.mediaRequests.length,1);a.leaveChannel(room.id);
 });

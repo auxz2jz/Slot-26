@@ -29,6 +29,8 @@ const ui = {
   prevChannel:$('prevChannel'),nextChannel:$('nextChannel'),
   radioJoin:$('radioJoin'),radioMonitor:$('radioMonitor'),radioCall:$('radioCall'),
   radioScan:$('radioScan'),leftHanded:$('leftHanded'),rightHanded:$('rightHanded'),
+  pttOnlyMicrophone:$('pttOnlyMicrophone'),pttReadyCue:$('pttReadyCue'),micModeStatus:$('micModeStatus'),micDelayStatus:$('micDelayStatus'),
+  radioConnectionState:$('radioConnectionState'),radioMicState:$('radioMicState'),radioTxState:$('radioTxState'),
   hardwareLearn:$('hardwareLearn'),hardwareClear:$('hardwareClear'),hardwareEnabled:$('hardwareEnabled'),
   hardwareStatus:$('hardwareStatus'),hardwareLog:$('hardwareLog'),hardwareStop:$('hardwareStop'),
   hardwareAudioCheck:$('hardwareAudioCheck'),hardwareAudioStatus:$('hardwareAudioStatus'),hardwareCopy:$('hardwareCopy'),
@@ -49,6 +51,8 @@ const ACTIVE_KEY='relay-one.joined.v5';
 const LAYOUT_KEY='relay-one.layout.v6.2';
 const RADIO_MODE_KEY='relay-one.radio-mode.v6.3';
 const RADIO_SCAN_KEY='relay-one.scan.v6.4', RADIO_HAND_KEY='relay-one.ptt-side.v6.4';
+const PTT_MIC_MODE_KEY='relay-one.ptt-only-microphone.v6.13';
+const PTT_READY_CUE_KEY='relay-one.ptt-ready-cue.v6.13';
 const EXTERNAL_PTT_KEY='relay-one.external-ptt.v6.12';
 const TRANSCRIPT_ENABLED_KEY='relay-one.transcribe.v6.5';
 const TRANSCRIPT_ENGINE_KEY='relay-one.transcript-engine.v6.7';
@@ -158,6 +162,10 @@ ui.resetDataSaved?.addEventListener('click',()=>{
 renderDataUsage();
 setInterval(()=>{void sampleDataUsage();},4000);
 let focusedId=null, selectedTx=null, microphone=null, micPromise=null, alertContext=null;
+let pttOnlyMicrophone=storeGet(PTT_MIC_MODE_KEY,false)===true;
+let pttReadyCue=storeGet(PTT_READY_CUE_KEY,true)!==false;
+const pttTiming={presses:0,readyCount:0,lastMicMs:null,lastReadyMs:null,slowMic:0,cancelledBeforeReady:0};
+let standbyAudioContext=null,micModeChanging=false;
 const savedExternal=storeGet(EXTERNAL_PTT_KEY,{});
 let externalBinding=typeof savedExternal?.binding==='string'&&/^(code|key):[A-Za-z0-9_-]{1,70}$/.test(savedExternal.binding)?savedExternal.binding:null;
 let externalMode=savedExternal?.mode==='toggle'?'toggle':'hold';
@@ -236,7 +244,7 @@ function speechDiagnosticReport(){
     s.room.title+': '+(s.track?.readyState||'no track')+', enabled='+Boolean(s.track?.enabled)+
     ', transmitting='+Boolean(s.transmitting)+', floor='+Boolean(s.floor===s.myId));
   return [
-    'Relay One V6.12 speech diagnostics (V6.7 baseline)',
+    'Relay One V6.13 speech diagnostics',
     'Transcription engine: '+transcriptMode,
     'On-device model state: '+asrState,
     'On-device recording active: '+Boolean(asrActive),
@@ -253,8 +261,14 @@ function speechDiagnosticReport(){
     'Speech enabled by user: '+transcriptEnabled,
     'Active recognition: '+Boolean(speechCapture),
     'Active local test: '+Boolean(speechTestCapture),
-    'Joined microphone streams: '+sessions.size,
-    'Note: joined channels keep microphone streams open even when not transmitting.',
+    'Microphone mode: '+(pttOnlyMicrophone?'PTT only':'always ready'),
+    'Physical microphone open: '+isPhysicalMicOpen(),
+    'Local transmit enabled: '+Boolean(selectedTx?.transmitting&&selectedTx?.track?.enabled),
+    'PTT-only mic presses: '+pttTiming.presses,
+    'PTT-only completed transmit activations: '+pttTiming.readyCount,
+    'PTT-only last mic acquired after: '+(pttTiming.lastMicMs===null?'not measured':pttTiming.lastMicMs+' ms'),
+    'PTT-only last transmitting after: '+(pttTiming.lastReadyMs===null?'not measured':pttTiming.lastReadyMs+' ms'),
+    'Joined audio sessions: '+sessions.size,
     'PTT held: '+Boolean(selectedTx),
     'PTT floor acquired: '+Boolean(selectedTx && selectedTx.floor===selectedTx.myId),
     'Last PTT: '+speechStats.lastPTT,
@@ -855,7 +869,7 @@ function diagnosticReport(){
       ', voice '+audio+'/'+peers.length+', ICE '+ice;
   });
   const data=usageMeter.snapshot();
-  return ['Relay One V6.12 connection diagnostics (V6.7 baseline)',
+  return ['Relay One V6.13 connection diagnostics',
     'Radio mode: '+radioMode,
     'Estimated WebRTC session: sent '+formatDataBytes(data.session.tx)+', received '+formatDataBytes(data.session.rx),
     'Estimated saved: sent '+formatDataBytes(data.saved.tx)+', received '+formatDataBytes(data.saved.rx),
@@ -889,15 +903,18 @@ function playTone(kind){
     const ctx=alertContext;
     if(!ctx || ctx.state!=='running')return;
     const start=ctx.currentTime+0.02;
-    const bursts=kind==='call'?[{at:0,len:0.24,hz:960},{at:.32,len:.24,hz:960}]:[{at:0,len:.18,hz:880}];
+    const bursts=kind==='call'?[{at:0,len:0.24,hz:960},{at:.32,len:.24,hz:960}]:
+      kind==='ready'?[{at:0,len:.095,hz:1180}]:
+      kind==='toggle-stop'?[{at:0,len:.12,hz:560}]:[{at:0,len:.18,hz:880}];
     for(const b of bursts){
       const osc=ctx.createOscillator(),gain=ctx.createGain();
-      osc.type=kind==='call'?'sine':'square';
+      osc.type=['call','ready','toggle-stop'].includes(kind)?'sine':'square';
       osc.frequency.setValueAtTime(b.hz,start+b.at);
       if(kind==='squawk')osc.frequency.exponentialRampToValueAtTime(530,start+b.at+b.len);
+      const volume=['ready','toggle-stop'].includes(kind)?.06:.11;
       gain.gain.setValueAtTime(.001,start+b.at);
-      gain.gain.linearRampToValueAtTime(.11,start+b.at+.018);
-      gain.gain.setValueAtTime(.11,start+b.at+b.len-.04);
+      gain.gain.linearRampToValueAtTime(volume,start+b.at+.018);
+      gain.gain.setValueAtTime(volume,start+b.at+b.len-.04);
       gain.gain.exponentialRampToValueAtTime(.001,start+b.at+b.len);
       osc.connect(gain);gain.connect(ctx.destination);
       osc.start(start+b.at);osc.stop(start+b.at+b.len+.01);
@@ -939,10 +956,140 @@ ui.rxTone.addEventListener('change',()=>{profile.rxTone=ui.rxTone.checked;storeP
 ui.alertTone.addEventListener('change',()=>{profile.alertTone=ui.alertTone.checked;storeProfile();});
 // Fixed radio plan: ordinary users cannot create channels, modify PINs, or view admin settings.
 
+const MICROPHONE_CONSTRAINTS={
+  audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},
+  video:false
+};
+function micStateSummary(){
+  if(!pttOnlyMicrophone)return microphone?.getAudioTracks?.()[0]?.readyState==='live'?
+    'Always ready: microphone open, muted until authorized Talk.':
+    'Always ready: microphone will open when joining a channel.';
+  const active=[...sessions.values()].find(s=>s.pttMode&&s.pttInputStream);
+  const waiting=[...sessions.values()].find(s=>s.pttMode&&s.pttMicPending);
+  return active?'PTT only: microphone ON while Talk is held.':
+    waiting?'PTT only: starting microphone… keep holding Talk.':
+    'PTT only: microphone OFF while idle; joined channels still receive.';
+}
+function renderMicMode(){
+  if(ui.pttOnlyMicrophone){ui.pttOnlyMicrophone.checked=pttOnlyMicrophone;ui.pttOnlyMicrophone.disabled=micModeChanging||Boolean(selectedTx);}
+  if(ui.pttReadyCue){
+    ui.pttReadyCue.checked=pttReadyCue;
+    ui.pttReadyCue.disabled=!pttOnlyMicrophone;
+  }
+  if(ui.micModeStatus)ui.micModeStatus.textContent=micStateSummary();
+  if(ui.micDelayStatus)ui.micDelayStatus.textContent=pttOnlyMicrophone?
+    (pttTiming.lastReadyMs===null?'PTT-only: hold Talk until TRANSMITTING. Startup time is measured after your first press.':
+    'Last PTT-only start-up: '+pttTiming.lastReadyMs+' ms to transmit'+
+    (pttTiming.lastMicMs===null?'':'; physical mic ready in '+pttTiming.lastMicMs+' ms')+
+    '. Wait for TRANSMITTING'+(pttReadyCue?' or the beep':'')+' before speaking.'):
+    'Always-ready mode gives the fastest talk start; the microphone remains muted while idle.';
+}
+function makeStandbyAudio(){
+  const C=window.AudioContext||window.webkitAudioContext;
+  if(!C)throw new Error('PTT-only mode requires Web Audio support');
+  if(!standbyAudioContext || standbyAudioContext.state==='closed')standbyAudioContext=new C();
+  const destination=standbyAudioContext.createMediaStreamDestination();
+  const source=standbyAudioContext.createConstantSource?
+    standbyAudioContext.createConstantSource():standbyAudioContext.createOscillator();
+  const zero=standbyAudioContext.createGain();
+  zero.gain.value=0;
+  source.connect(zero);zero.connect(destination);source.start();
+  const track=destination.stream?.getAudioTracks()?.[0];
+  if(!track){source.stop();source.disconnect();zero.disconnect();throw Error('Cannot create a standby radio audio track');}
+  track.enabled=false;
+  return {track,stream:destination.stream,destination,source,zero,context:standbyAudioContext};
+}
+function closeStandbyAudioIfUnused(){
+  if([...sessions.values()].some(s=>s.pttMode))return;
+  const ctx=standbyAudioContext;standbyAudioContext=null;
+  if(ctx)try{void ctx.close();}catch{}
+}
+function releasePTTMicrophone(session){
+  if(!session?.pttMode)return;
+  ++session.pttMicSerial; // Invalidate any getUserMedia resolving after release.
+  const node=session.pttInputNode,stream=session.pttInputStream;
+  session.pttInputNode=null;session.pttInputStream=null;session.pttMicPending=null;
+  try{node?.disconnect();}catch{}
+  try{stream?.getTracks().forEach(track=>track.stop());}catch{}
+  if(stream)logRadio('PTT MIC OFF',session.room.title,'Physical microphone released');
+  renderMicMode();
+}
+async function preparePTTMicrophone(session){
+  if(!session?.pttMode||session.pttInputStream||session.pttMicPending)return;
+  const epoch=++session.pttMicSerial;
+  logRadio('PTT MIC REQUEST',session.room.title,'Opening physical microphone');
+  // Must be requested directly from the PTT gesture, before awaiting signaling.
+  try{
+    const work=navigator.mediaDevices.getUserMedia(MICROPHONE_CONSTRAINTS);
+    session.pttMicPending=work;
+    renderMicMode();
+    const stream=await work;
+    if(session.pttMicSerial!==epoch ||session.stopped || !session.wantTalk ||selectedTx!==session){
+      stream.getTracks().forEach(track=>track.stop());
+      logRadio('PTT MIC CANCELLED',session.room.title,'Late microphone permission or quick release');
+      return;
+    }
+    const micMs=Math.max(0,Date.now()-session.pttPressedAt);
+    pttTiming.lastMicMs=micMs;
+    if(micMs>=1000)pttTiming.slowMic++;
+    speechEvent('PTT MIC ACQUIRED','after '+micMs+' ms (device microphone ready)');
+    const input=session.pttContext.createMediaStreamSource(stream);
+    try{input.connect(session.pttDestination);}
+    catch(error){input.disconnect();stream.getTracks().forEach(track=>track.stop());throw error;}
+    session.pttInputStream=stream;session.pttInputNode=input;
+    logRadio('PTT MIC ON',session.room.title,'Input ready after '+micMs+' ms');
+    session.transmitIfAllowed(false);
+    renderMicMode();
+  }catch(error){
+    if(session.pttMicSerial===epoch){
+      const reason=String(error?.name||error?.message||'unknown').slice(0,85);
+      logRadio('PTT MIC ERROR',session.room.title,reason);
+      reportError('PTT-only microphone failed to activate ('+reason+'). Try again or uncheck PTT-only mode.');
+      session.note='Microphone could not activate: '+reason;
+      if(selectedTx===session)releaseTalk(session);
+      updateRow(session.publicId);updateQuick();
+    }
+  }finally{
+    if(session.pttMicSerial===epoch)session.pttMicPending=null;
+    renderMicMode();
+  }
+}
+async function setPTTOnlyMicrophone(enabled){
+  const next=Boolean(enabled);
+  if(next===pttOnlyMicrophone){renderMicMode();return;}
+  if(selectedTx||joinInProgress||micModeChanging){
+    setMessage('Release Talk and wait for channel joining to finish before changing microphone mode.');
+    renderMicMode();return;
+  }
+  const rejoin=[...sessions.keys()],previousFocus=focusedId;
+  micModeChanging=true;
+  // Existing call tracks are a different kind (hardware mic vs silent AudioContext
+  // placeholder). Briefly reconnect only on a mode change, NEVER for each PTT.
+  for(const id of rejoin)leaveChannel(id);
+  pttOnlyMicrophone=next;storeSet(PTT_MIC_MODE_KEY,next);renderMicMode();
+  logRadio('MICROPHONE MODE','','Changed to '+(next?'PTT only':'always ready'));
+  try{
+    for(const id of rejoin){
+      const room=storedRoom(id);
+      if(room)await joinChannel(room);
+    }
+    if(sessions.has(previousFocus))focusedId=previousFocus;
+    setMessage((next?'PTT-only microphone enabled. Released when idle.':'Always-ready microphone enabled. Muted when idle.')+
+      (rejoin.length?' Channels rejoining.':''));
+  }finally{micModeChanging=false;renderMicMode();updateAll();}
+}
+ui.pttOnlyMicrophone?.addEventListener('change',()=>{void setPTTOnlyMicrophone(ui.pttOnlyMicrophone.checked);});
+ui.pttReadyCue?.addEventListener('change',()=>{
+  pttReadyCue=Boolean(ui.pttReadyCue.checked);
+  storeSet(PTT_READY_CUE_KEY,pttReadyCue);
+  renderMicMode();
+});
+renderMicMode();
+
 async function ensureMicrophone(){
   if(microphone && microphone.getAudioTracks()[0]?.readyState==='live')return microphone;
   if(micPromise)return micPromise;
-  micPromise=navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false})
+  micPromise=navigator.mediaDevices.getUserMedia(MICROPHONE_CONSTRAINTS)
     .then(stream=>{
       const source=stream.getAudioTracks()[0];
       if(!source || typeof source.clone!=='function'){stream.getTracks().forEach(x=>x.stop());throw Error('This browser cannot create separate microphone tracks. No channels were connected.');}
@@ -989,22 +1136,32 @@ async function joinChannel(c){
       pinCache.set(c.id,pin);
     }
     if(sessions.has(c.id) || !modeAllows(c))return;
-    const mic=await ensureMicrophone();
+    const mic=pttOnlyMicrophone?null:await ensureMicrophone();
     if(!modeAllows(c) || sessions.size>=maxActiveChannels())return;
-    const source=mic.getAudioTracks()[0];
-    const track=source.clone();track.enabled=false;
-    // Every channel gets its own track and stream. Other channel tracks remain disabled.
-    const stream=new MediaStream([track]);
+    const standby=pttOnlyMicrophone?makeStandbyAudio():null;
+    const track=standby?standby.track:mic.getAudioTracks()[0].clone();
+    track.enabled=false;
+    // In PTT-only mode a silent audio track keeps WebRTC alive without owning a mic.
+    const stream=standby?standby.stream:new MediaStream([track]);
     const session=new ChannelSession(c,roomId,track,stream,monitorValue(c.id));
+    session.pttMode=!!standby;
+    if(standby){
+      session.pttContext=standby.context;
+      session.pttDestination=standby.destination;
+      session.pttSilence=standby.source;
+      session.pttZero=standby.zero;
+    }
     sessions.set(c.id,session);
     desiredJoined.add(c.id);persistDesired();
     if(!sessions.has(focusedId))focusedId=c.id;
     session.start();
-    logRadio('CHANNEL JOIN',c.title,'New microphone track; independent WebRTC room');
+    logRadio('CHANNEL JOIN',c.title,pttOnlyMicrophone?
+      'Silent standby track; microphone not requested':'New microphone track; independent WebRTC room');
+    renderMicMode();
     setMessage('Joined '+c.title+'. Keep this page open while using the radio.');
     updateAll();
   }catch(err){reportError(err?.message||'Cannot start the channel.');setMessage('Unable to join '+c.title);}
-  finally{joinInProgress--;releaseMicrophoneIfUnused();}
+  finally{joinInProgress--;releaseMicrophoneIfUnused();closeStandbyAudioIfUnused();}
 }
 function leaveChannel(id){
   const s=sessions.get(id);
@@ -1014,7 +1171,7 @@ function leaveChannel(id){
   if(focusedId===id)focusedId=viewId===id?null:(sessions.keys().next().value||null);
   if(scanPreviewId===id)scanPreviewId=null;
   if(scanActivityId===id)scanActivityId=null;
-  releaseMicrophoneIfUnused();scanTick();updateAll();
+  releaseMicrophoneIfUnused();closeStandbyAudioIfUnused();renderMicMode();scanTick();updateAll();
 }
 async function restoreJoined(){
   const ids=[...desiredJoined].filter(id=>modeAllows(storedRoom(id))).slice(0,maxActiveChannels());
@@ -1036,9 +1193,17 @@ ui.enableSpeakers.addEventListener('click',async()=>{
 });
 
 function startPTT(s){
-  if(!s || !s.ready() || selectedTx && selectedTx!==s || s.floor && s.floor!==s.myId)return;
+  if(micModeChanging || !s || !s.ready() || selectedTx && selectedTx!==s || s.floor && s.floor!==s.myId)return;
   if(speechTestCapture)stopSpeechTest();
   unlockSound();selectedTx=s;s.wantTalk=true;logRadio('PTT PRESSED',s.room.title);
+  if(s.pttMode){
+    s.pttPressedAt=Date.now();
+    pttTiming.presses++;
+    speechEvent('PTT MIC PRESS','PTT-only mode; acquiring microphone on demand');
+    try{void s.pttContext?.resume();}catch{}
+    void preparePTTMicrophone(s);
+  }
+  renderMicMode();
   for(const other of sessions.values())other.applyAudioOutput();
   if(s.isHost){if(!s.floor)s.setFloor(s.myId,profile.txTone);}
   else s.send(s.hostId(),{type:'request',tone:profile.txTone});
@@ -1052,11 +1217,13 @@ function releaseTalk(s){
     externalMessage='External transmission stopped.';
     externalEvent('EXTERNAL PTT RELEASE','Radio released');
   }
-  s.wantTalk=false;s.disableTransmit();endSpeechCapture(s);
+  if(s.pttMode&&!s.transmitting){pttTiming.cancelledBeforeReady++;speechEvent('PTT ENDED BEFORE READY','release without active transmission');}
+  s.wantTalk=false;endSpeechCapture(s);s.disableTransmit();
   speechStats.lastPTT='released '+s.room.title;
   speechEvent('PTT RELEASED','voice track disabled');
   logRadio('PTT RELEASED',s.room.title);
   if(selectedTx===s)selectedTx=null;
+  renderMicMode();
   if(transcriptPopupPending && autoTranscriptPopup){
     transcriptPopupPending=false;
     openTranscriptPopup();
@@ -1152,7 +1319,7 @@ function externalKeyDown(e){
     externalMessage='Press detected: '+externalLabel(sig)+'. Release now.';
     externalEvent('TEST PRESS',externalLabel(sig));return;
   }
-  if(!externalEnabled||!sig||sig!==externalBinding)return;
+  if(!externalEnabled||!sig||sig!==externalBinding||micModeChanging)return;
   consumeHardwareKey(e);
   if(e.repeat||externalNeedsRelease)return;
   externalNeedsRelease=true;
@@ -1228,7 +1395,7 @@ async function checkExternalAudio(){
   }
 }
 function hardwareDiagnosticReport(){
-  return ['Relay One V6.12 external PTT diagnostics (V6.7 always-ready baseline)',
+  return ['Relay One V6.13 external PTT diagnostics',
     'Recorded: '+new Date().toISOString(),'Browser: '+(navigator.userAgent||'not exposed'),
     'Page visible: '+!document.hidden,'Detection active: '+externalLearning,
     'Detected binding: '+externalLabel(externalBinding),
@@ -1238,8 +1405,11 @@ function hardwareDiagnosticReport(){
     'Unidentified events: '+externalCounts.unknown,
     'Live external presses: '+externalCounts.press,'Live external releases: '+externalCounts.release,
     'Safety timeouts: '+externalCounts.timeout,'Audio devices: '+externalDeviceSummary,
-    'Microphone mode: always ready (original direct microphone track)',
-    'Physical microphone open: '+Boolean(microphone?.getAudioTracks?.()[0]?.readyState==='live'),
+    'Microphone mode: '+(pttOnlyMicrophone?'PTT only':'always ready (original direct microphone track)'),
+    'Physical microphone open: '+isPhysicalMicOpen(),
+    'Local transmit enabled: '+Boolean(selectedTx?.transmitting&&selectedTx?.track?.enabled),
+    'Last microphone acquisition delay: '+(pttTiming.lastMicMs??'not measured')+' ms',
+    'Last transmit-ready delay: '+(pttTiming.lastReadyMs??'not measured')+' ms',
     'Status: '+(externalMessage||'none'),'','Button events (no audio, transcript, PIN or device IDs):',...externalEvents].join('\n');
 }
 ui.hardwareStop?.addEventListener('click',()=>stopExternalPTT('Stopped from screen.'));
@@ -1288,12 +1458,15 @@ document.addEventListener('visibilitychange',()=>{
   if(!document.hidden)for(const s of sessions.values())s.reconnectSignaling();
 });
 window.addEventListener('online',()=>{for(const s of sessions.values())s.reconnectSignaling();});
-window.addEventListener('pagehide',()=>{stopExternalPTT('Page closed; external Talk released.');if(externalLearning)finishExternalDetection();endSpeechCapture();void sampleDataUsage();if(selectedTx)releaseTalk(selectedTx);for(const s of sessions.values())s.stop();});
+window.addEventListener('pagehide',()=>{stopExternalPTT('Page closed; external Talk released.');if(externalLearning)finishExternalDetection();endSpeechCapture();void sampleDataUsage();if(selectedTx)releaseTalk(selectedTx);for(const s of sessions.values())s.stop();sessions.clear();releaseMicrophoneIfUnused();closeStandbyAudioIfUnused();});
 
 class ChannelSession{
   constructor(publicRoom,effectiveId,track,stream,monitor){
     this.room=publicRoom;this.publicId=publicRoom.id;this.id=effectiveId;
     this.track=track;this.stream=stream;this.monitor=monitor;
+    this.pttMode=false;this.pttContext=null;this.pttDestination=null;
+    this.pttInputNode=null;this.pttInputStream=null;this.pttMicPending=null;
+    this.pttMicSerial=0;this.pttSilence=null;this.pttZero=null;this.pttPressedAt=0;
     this.peer=null;this.myId=null;this.isHost=false;this.members=new Map;this.roster=new Set;
     this.floor=null;this.floorAt=0;this.wantTalk=false;this.transmitting=false;
     this.generation=0;this.stopped=false;this.status='Connecting';this.note='Connecting to signaling…';
@@ -1340,7 +1513,9 @@ class ChannelSession{
   }
   disableTransmit(){
     if(this.toneTimer){clearTimeout(this.toneTimer);this.toneTimer=null;}
+    if(this.pttMode && this.transmitting)endSpeechCapture(this);
     this.track.enabled=false;this.transmitting=false;
+    if(this.pttMode)releasePTTMicrophone(this);
   }
   transmitIfAllowed(newFloor){
     if(!this.wantTalk || selectedTx!==this || this.floor!==this.myId)return;
@@ -1348,7 +1523,21 @@ class ChannelSession{
     const open=()=>{
       this.toneTimer=null;
       if(this.wantTalk && selectedTx===this && this.floor===this.myId && !this.stopped){
-        this.track.enabled=true;this.transmitting=true;speechDidTransmit(this);updateRow(this.publicId);updateQuick();
+        if(this.pttMode && !this.pttInputStream){
+          this.note='Waiting for microphone to activate…';
+          logRadio('PTT MIC WAIT',this.room.title,'Holding floor until input is ready');
+          updateRow(this.publicId);updateQuick();return;
+        }
+        if(this.transmitting)return;
+        this.track.enabled=true;this.transmitting=true;
+        if(this.pttMode){
+          const time=Math.max(0,Date.now()-this.pttPressedAt);
+          pttTiming.lastReadyMs=time;pttTiming.readyCount++;
+          speechEvent('PTT TRANSMIT READY','after '+time+' ms from press');
+          renderMicMode();
+          if(pttReadyCue)playTone('ready');
+        }
+        speechDidTransmit(this);updateRow(this.publicId);updateQuick();
       }
     };
     if(newFloor && profile.txTone)this.toneTimer=setTimeout(open,290);
@@ -1408,6 +1597,10 @@ class ChannelSession{
     if(this.signalingRetry)clearTimeout(this.signalingRetry);
     this.disableTransmit();this.closePeer();
     try{this.track.stop();}catch{}
+    if(this.pttMode){
+      try{this.pttSilence?.stop();this.pttSilence?.disconnect();}catch{}
+      try{this.pttZero?.disconnect();}catch{}
+    }
   }
   start(){
     this.heartbeat=setInterval(()=>this.tick(),PING_EVERY);
@@ -1782,7 +1975,7 @@ function updateRow(id){
   const canSpeak=isActive&&s.ready()&&(!selectedTx||selectedTx===s)&&(!s.floor||s.floor===s.myId);
   r.ptt.disabled=!canSpeak;
   r.ptt.classList.toggle('sending',Boolean(s?.transmitting));
-  r.ptt.textContent=s?.transmitting?'TRANSMITTING':s?.wantTalk?'REQUESTING…':'Hold Talk';
+  r.ptt.textContent=s?.transmitting?'TRANSMITTING':s?.wantTalk&&s.pttMode&&!s.pttInputStream?'MIC STARTING…':s?.wantTalk?'REQUESTING…':'Hold Talk';
   r.call.disabled=!isActive||!s.ready();
   const person=isActive && s.floor ? s.info(s.floor):null;
   r.speaker.textContent=!isActive?'Join to see this channel':person?'ON AIR: '+person.name:(s.monitor?'Channel idle':'Monitoring off');
@@ -1866,6 +2059,33 @@ function browseChannel(direction){
   updateAll();
 }
 function displayChannelId(){return scanDisplayId();}
+function isPhysicalMicOpen(){
+  return Boolean(pttOnlyMicrophone?[...sessions.values()].some(s=>s.pttInputStream?.getAudioTracks()?.some(t=>t.readyState==='live')):microphone?.getAudioTracks?.()[0]?.readyState==='live');
+}
+function setRadioState(el,state,label){
+  if(!el)return;
+  el.dataset.state=state;
+  const value=el.querySelector?.('strong');
+  if(value)value.textContent=label;
+  else el.textContent=label;
+}
+function renderLiveRadioStates(displayed){
+  const tx=selectedTx;
+  const sending=Boolean(tx?.transmitting&&tx?.track?.enabled);
+  const starting=Boolean(tx?.wantTalk&&!sending);
+  const micOpen=isPhysicalMicOpen();
+  setRadioState(ui.radioConnectionState,displayed?.ready()?'connected':displayed?'pending':'off',displayed?.ready()?'CONNECTED':displayed?'CONNECTING':'NOT JOINED');
+  setRadioState(ui.radioMicState,sending?'sending':starting&&!micOpen?'pending':micOpen?'ready':'off',
+    sending?'ON • TRANSMITTING':starting&&!micOpen?'STARTING':micOpen?'READY • MUTED':'OFF');
+  setRadioState(ui.radioTxState,sending?'sending':starting?'pending':'off',
+    sending?'ON AIR'+(externalSession===tx?' • HEADSET':' • SCREEN'):starting?'WAITING':'NOT ON AIR');
+  if(ui.quick){
+    ui.quick.classList.toggle('tx-live',sending);
+    ui.quick.classList.toggle('tx-pending',starting);
+    ui.quick.setAttribute('aria-label',sending?'Transmitting'+(externalSession===tx?' via headset; tap to stop':''):'Hold to talk on selected channel');
+  }
+  renderMicMode();
+}
 function renderRadioDisplay(){
   const id=scanDisplayId();
   const c=storedRoom(id)||availableChannels()[0];
@@ -1880,7 +2100,8 @@ function renderRadioDisplay(){
   if(ui.screenMode)ui.screenMode.textContent=radioMode.toUpperCase();
   if(ui.screenLock)ui.screenLock.textContent=c?.secure?'LOCK':'OPEN';
   if(ui.screenSignal)ui.screenSignal.textContent=!s?'NOT JOINED':s.ready()?'CONNECTED':'CONNECTING';
-  if(ui.screenScan)ui.screenScan.textContent=selectedTx?'TRANSMIT':isActive?'RECEIVING':scanEnabled?preview?'SCAN PREVIEW':'SCANNING':'MANUAL';
+  renderLiveRadioStates(s);
+  if(ui.screenScan)ui.screenScan.textContent=selectedTx?.transmitting?'TRANSMIT':selectedTx?'REQUESTING':isActive?'RECEIVING':scanEnabled?preview?'SCAN PREVIEW':'SCANNING':'MANUAL';
   if(ui.scanIndicator)ui.scanIndicator.textContent=scanEnabled?'SCAN ON':'SCAN OFF';
   if(ui.radioScan){
     ui.radioScan.textContent=scanEnabled?'Scan on':'Scan off';
@@ -1906,7 +2127,7 @@ function renderRadioDisplay(){
   if(ui.quick){
     ui.quick.disabled=!target?.ready()||Boolean(selectedTx && selectedTx!==target)||
       Boolean(target.floor && target.floor!==target.myId);
-    ui.quickText.textContent=target?.transmitting?'TRANSMITTING':target?.wantTalk?'REQUESTING…':'HOLD TO TALK';
+    ui.quickText.textContent=target?.transmitting?'TRANSMITTING':target?.wantTalk&&target.pttMode&&!target.pttInputStream?'MIC STARTING…':target?.wantTalk?'REQUESTING…':'HOLD TO TALK';
   }
   if(ui.radioJoin){
     ui.radioJoin.textContent=scanEnabled?'SCAN ACTIVE':s?'LEAVE':'JOIN';

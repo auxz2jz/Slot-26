@@ -1,8 +1,14 @@
-# Relay One — Original Always-Ready Radio + External Button (V6.12)
+# Relay One — Independent Microphone and Headset Controls (V6.13)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
 
 This is a browser-based push-to-talk prototype for a shared set of **ten fixed channels**. Every user sees the exact same channels. No individual invitation, channel creation, or channel distribution is required.
+
+## V6.13 — Restore optional microphone-off mode with distinct live indicators
+
+The proven V6.12 headset detection remains independent of microphone activation. Default is original always-ready audio, using a NEW microphone-mode storage key so older experimental settings cannot silently switch it on. Enable “Turn microphone off between transmissions” to use the previous silent Web Audio standby method and acquire the mic only when transmitting; mode changes rejoin channels. PTT only may have device startup delay; wait for red TRANSMITTING. Optional ready beep and timing diagnostics are restored. On-screen indicators distinguish green connected, blue microphone ready/muted, gray off, amber starting/waiting and red transmitting. The headset toggle works with either mic mode; external button identification is retained from V6.12. The Android system microphone privacy indicator is controlled by the OS, not Relay One. Actual remote reception and handset audio routing still need device testing.
+
+Rollback: https://auxz2jz.github.io/Slot-26/legacy-v6-12.html
 
 ## V6.12 — Controlled rollback to original V6.7 microphone
 
