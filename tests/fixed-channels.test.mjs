@@ -859,7 +859,7 @@ test('V6.14: beep test waits for suspended audio context without opening a micro
   assert.equal(a.toneStarts.length,1);
   assert.equal(a.mediaRequests.length,0);
   const report=a.diagnosticReport();
-  assert.match(report,/Relay One V6.14 global diagnostics/);
+  assert.match(report,/Relay One V6.15 global diagnostics/);
   assert.match(report,/TONE REQUEST/);
   assert.match(report,/TONE SCHEDULED/);
   assert.match(report,/Tone requests: 1; scheduled: 1/);
@@ -876,4 +876,43 @@ test('V6.14: always-ready mode plays one local ready cue and exports global TX s
   assert.match(a.diagnosticReport(),/TRANSMIT READY/);
   assert.match(a.diagnosticReport(),/outgoing track=live, enabled=true/);
   a.releaseTalk(s);a.leaveChannel(room.id);
+});
+
+test('V6.15: quick speech activation uses the existing model loader, then toggles captions without reloading',async()=>{
+  const a=browser('Quick speech',[],true,{local:true});
+  assert.equal(a.ui.quickSpeech.dataset.state,'off');
+  a.ui.quickSpeech.listeners.click[0]();
+  assert.equal(a.ui.quickSpeech.dataset.state,'pending');
+  assert.equal(a.ui.transcriptEnabled.checked,true);
+  flush();
+  assert.equal(a.ui.quickSpeech.dataset.state,'on');
+  assert.equal(a.workerInstances.length,1);
+  a.ui.quickSpeech.listeners.click[0]();
+  assert.equal(a.ui.transcriptEnabled.checked,false);
+  a.ui.quickSpeech.listeners.click[0]();
+  assert.equal(a.ui.quickSpeech.dataset.state,'on');
+  assert.equal(a.workerInstances.length,1);
+  assert.equal(a.mediaRequests.length,0);
+});
+test('V6.15: quick headset detection enables verified button and stays synchronized',()=>{
+  const a=browser('Quick headset',[]);
+  a.ui.quickHeadset.listeners.click[0]();
+  assert.equal(a.ui.quickHeadset.dataset.state,'pending');
+  buttonPulse(a);
+  assert.equal(a.ui.hardwareEnabled.checked,true);
+  assert.equal(a.ui.quickHeadset.dataset.state,'on');
+  a.ui.quickHeadset.listeners.click[0]();
+  assert.equal(a.ui.hardwareEnabled.checked,false);
+});
+test('V6.15: quick microphone toggle uses existing mode setting',async()=>{
+  const a=browser('Quick mic',[],true,{pttMic:true});
+  a.ui.quickMic.listeners.click[0]();
+  await Promise.resolve();
+  assert.equal(a.getPTTOnlyMicrophone(),true);
+  assert.equal(a.ui.pttOnlyMicrophone.checked,true);
+  assert.equal(a.ui.quickMic.dataset.state,'on');
+  a.ui.quickMic.listeners.click[0]();
+  await Promise.resolve();
+  assert.equal(a.getPTTOnlyMicrophone(),false);
+  assert.equal(a.ui.quickMic.dataset.state,'off');
 });
