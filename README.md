@@ -1,8 +1,23 @@
-# Relay One — Handheld Radio with On-Device Speech-to-Text (Version 6.7)
+# Relay One — Handheld Radio with Optional Microphone Modes (Version 6.8)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
 
 This is a browser-based push-to-talk prototype for a shared set of **ten fixed channels**. Every user sees the exact same channels. No individual invitation, channel creation, or channel distribution is required.
+
+## V6.8 — Opt-in PTT-only microphone activation
+
+By default, Relay One retains its original fastest-PTT behavior: when a user joins a channel, Chrome acquires the microphone and keeps its track open but **disabled/muted** until Talk is pressed. This remains the default if the new checkbox is not checked.
+
+A new setting under the handheld radio controls, **Turn microphone off until PTT is pressed**, lets operators choose stronger idle microphone privacy:
+- **Unchecked — always ready:** on join the actual microphone stays open; audio transmits only on authorized PTT. This has lower talk-start latency.
+- **Checked — PTT only:** channel joins create a silent Web Audio placeholder track to maintain the existing PeerJS audio calls **without requesting microphone access**. On Talk press, `getUserMedia` is requested (may show browser permission prompt), the microphone is routed into the already-connected audio stream after floor authorization, and on release the mic input is disconnected and all physical microphone tracks are stopped. A slow/late permission response is cancelled when the button was already released. Receiving/monitoring remains connected while the microphone is off.
+- Changing the setting while channels are joined briefly disconnects/rejoins the selected channels, since their outgoing track type changes. Per-PTT calls do **not** renegotiate the network stream.
+- The checkbox is saved on this browser. Mode switches during PTT or another join are declined until idle, with a visible notification.
+- The existing on-device Whisper path records the channel's outgoing stream **only during authorized PTT**, including when using the new mic activation mode; captions are still processed after releasing Talk.
+- Real device microphone activation is not instantaneous. First words can be cut off if spoken before audio activation finishes. Keep Talk pressed, wait for TRANSMITTING on screen, then speak, or leave the box **unchecked** for time-critical radio uses.
+- Speech and connection diagnostics include the microphone mode and whether the physical mic is currently open. In PTT-only mode, an active *silent outgoing WebRTC track* is not an active microphone capture.
+- Web Audio / browser background execution can vary by platform. If PTT-only mode fails to activate on a specific phone, uncheck it and verify the original always-ready PTT works.
+- **Backup:** https://auxz2jz.github.io/Slot-26/legacy-v6-7.html
 
 ## V6.7 — Optional shared-microphone, on-device speech-to-text (experimental)
 
