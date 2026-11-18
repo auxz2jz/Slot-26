@@ -1,8 +1,20 @@
-# Relay One — Handheld Radio with Optional Microphone Modes (Version 6.8)
+# Relay One — Handheld Radio with PTT Ready Cue (Version 6.9)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
 
 This is a browser-based push-to-talk prototype for a shared set of **ten fixed channels**. Every user sees the exact same channels. No individual invitation, channel creation, or channel distribution is required.
+
+## V6.9 — PTT-only microphone readiness and measured activation (experimental)
+
+Android Chrome requires time to open a microphone that has been completely closed. Early speech spoken immediately after pressing Talk cannot be retroactively captured; a short transmission may be partially silent even though the Whisper model works. A Samsung report showed that the spoken count “one two three four” could be captured only as “three four” in PTT-only mode, while always-ready mode worked normally.
+
+V6.9 improves usability and diagnostics while keeping both microphone modes intact:
+- In **PTT-only mode**, the Talk button now displays **MIC STARTING…** until the microphone is actually acquired, and **TRANSMITTING** only after both the radio floor and outgoing track are enabled.
+- An optional **Play a short beep when PTT-only microphone is ready** checkbox (on by default) plays a brief quiet local ready tone after the outgoing radio track is enabled. Turn this off for silent operation. Wait for the tone or the displayed **TRANSMITTING** state before beginning a transmission.
+- **Speech diagnostics** now include measured elapsed milliseconds from Talk press to microphone acquisition and from Talk press to transmit-ready, plus the count of quick releases before readiness, and timestamped `PTT MIC PRESS`, `PTT MIC ACQUIRED`, and `PTT TRANSMIT READY` events. These diagnostics contain no spoken words.
+- These changes do not claim to remove Android’s cold microphone activation delay. If immediate speech onset is essential, **leave PTT-only unchecked** to use the fast always-ready mode.
+- Always-ready mode, WebRTC audio, Whisper model choices, and the mic-off behavior when idle are otherwise unchanged. The new controls and lifecycle events have automated tests; timing and audio cues still need verification on actual phones.
+- Rollback: https://auxz2jz.github.io/Slot-26/legacy-v6-8.html
 
 ## V6.8 — Opt-in PTT-only microphone activation
 
