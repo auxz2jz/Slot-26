@@ -1,8 +1,14 @@
-# Relay One — Independent Microphone and Headset Controls (V6.13)
+# Relay One — Global Diagnostics and Ready Cue (V6.14)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
 
 This is a browser-based push-to-talk prototype for a shared set of **ten fixed channels**. Every user sees the exact same channels. No individual invitation, channel creation, or channel distribution is required.
+
+## V6.14 — Global diagnostics and local transmit-ready sound
+
+All diagnostic copy controls export the same report, including channel and WebRTC status, microphone mode and timings, headset events, scan and speech-to-text, byte estimates, and tone requests, scheduling, oscillator completion, and failures. The ready cue is independently enabled for both microphone modes and plays only after authorized local TX begins. A standalone test requests the sound without joining or opening the microphone. If Web Audio is suspended, the cue waits for resume instead of silently returning; a late cue is discarded if the transmission has ended. Android/Chrome controls physical audio routing; even oscillator completion is not proof of audible headset output.
+
+**Development rule:** every new or changed feature must add its safe settings/state, relevant events, errors and timings to the global diagnostics where applicable. Do not log PINs, peer/device IDs, conversation text or recorded audio. All feature-specific copy controls must export global diagnostics.
 
 ## V6.13 — Restore optional microphone-off mode with distinct live indicators
 
