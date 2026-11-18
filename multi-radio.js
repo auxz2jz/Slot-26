@@ -8,6 +8,7 @@ import {WebRTCUsageMeter,formatDataBytes} from './usage-meter.mjs';
 
 const $ = id => document.getElementById(id);
 const ui = {
+  quickSpeech:$('quickSpeech'),quickHeadset:$('quickHeadset'),quickMic:$('quickMic'),quickHeadsetStatus:$('quickHeadsetStatus'),
   list:$('channelList'), name:$('displayName'), colors:$('colors'),
   txTone:$('txTone'), rxTone:$('rxTone'), alertTone:$('alertTone'),
   message:$('channelMessage'), error:$('errorMessage'), count:$('joinCount'),
@@ -172,6 +173,7 @@ let externalMode=savedExternal?.mode==='toggle'?'toggle':'hold';
 let externalEnabled=Boolean(externalBinding&&savedExternal?.enabled===true);
 let externalSession=null,externalWatchdog=null,externalLearning=false,externalLearnTimer=null;
 let externalDown=null,externalPressedAt=0,externalMessage='',externalNeedsRelease=false;
+let quickHeadsetLearning=false;
 let externalDeviceSummary='Not checked';
 const externalEvents=[],externalCounts={testDown:0,testUp:0,unknown:0,press:0,release:0,timeout:0};
 // The center LCD may sweep through joined channels; PTT always has a fixed, visible target.
@@ -245,7 +247,7 @@ function speechDiagnosticReport(){
     s.room.title+': '+(s.track?.readyState||'no track')+', enabled='+Boolean(s.track?.enabled)+
     ', transmitting='+Boolean(s.transmitting)+', floor='+Boolean(s.floor===s.myId));
   return [
-    'Relay One V6.14 speech diagnostics',
+    'Relay One V6.15 speech diagnostics',
     'Transcription engine: '+transcriptMode,
     'On-device model state: '+asrState,
     'On-device recording active: '+Boolean(asrActive),
@@ -460,7 +462,18 @@ const asrStats={recorded:0,queued:0,completed:0,errors:0,lastError:'none'};
 function setAsrStatus(message){
   if(ui.asrState)ui.asrState.textContent=message;
 }
+function renderQuickSpeech(){
+  if(!ui.quickSpeech)return;
+  const local=transcriptMode==='local';
+  const ready=local&&transcriptEnabled&&asrState==='ready';
+  const starting=local&&transcriptEnabled&&asrState==='loading';
+  ui.quickSpeech.textContent=ready?'Turn off speech to text':starting?'Activating speech to text…':local&&transcriptEnabled&&asrState==='error'?'Retry speech to text':'Turn on speech to text';
+  ui.quickSpeech.disabled=starting;
+  ui.quickSpeech.setAttribute('aria-pressed',String(ready));
+  ui.quickSpeech.dataset.state=ready?'on':starting?'pending':'off';
+}
 function renderAsrControls(){
+  renderQuickSpeech();
   if(ui.transcriptEngine)ui.transcriptEngine.value=transcriptMode;
   if(ui.asrLoad){
     ui.asrLoad.disabled=transcriptMode!=='local'||asrState==='loading'||asrState==='ready';
@@ -810,10 +823,19 @@ function setTranscriptEnabled(enabled){
     'On-device model not loaded. Tap Download / load on-device speech model first.');
   else if(!SpeechEngine)transcriptStatus('Legacy browser recognition is unavailable in this browser.');
   else transcriptStatus('Legacy browser recognition is ready; it may conflict with radio audio on Android.');
+  renderQuickSpeech();
   speechEvent(transcriptEnabled?'CAPTIONS ENABLED':'CAPTIONS DISABLED',
     transcriptMode==='local'?'on-device engine '+asrState:
     SpeechEngine?'legacy Speech API present':'legacy Speech API unavailable');
 }
+ui.quickSpeech?.addEventListener('click',()=>{
+  if(transcriptMode==='local'&&transcriptEnabled&&asrState==='ready'){
+    setTranscriptEnabled(false);logRadio('QUICK SPEECH','','disabled');return;
+  }
+  setTranscriptMode('local');setTranscriptEnabled(true);
+  logRadio('QUICK SPEECH','','activate existing on-device model loader; state '+asrState);
+  loadLocalAsr();
+});
 if(ui.transcriptEnabled)ui.transcriptEnabled.addEventListener('change',()=>{
   setTranscriptEnabled(ui.transcriptEnabled.checked);
 });
@@ -875,7 +897,10 @@ function diagnosticReport(){
       ', standby context='+(s.pttContext?.state||'none');
   });
   const data=usageMeter.snapshot();
-  return ['Relay One V6.14 global diagnostics',
+  return ['Relay One V6.15 global diagnostics',
+    'Quick speech control: '+(ui.quickSpeech?.dataset.state||'unavailable')+'; model '+asrState,
+    'Quick headset control: '+(ui.quickHeadset?.dataset.state||'unavailable'),
+    'Quick microphone control: '+(ui.quickMic?.dataset.state||'unavailable'),
     'Browser: '+(navigator.userAgent||'not exposed'),
     'Secure context: '+Boolean(window.isSecureContext),
     'Page visible: '+!document.hidden,
@@ -1022,6 +1047,12 @@ function micStateSummary(){
     'PTT only: microphone OFF while idle; joined channels still receive.';
 }
 function renderMicMode(){
+  if(ui.quickMic){
+    ui.quickMic.textContent=micModeChanging?'Switching microphone mode…':pttOnlyMicrophone?'Keep microphone always ready':'Turn off mic between transmissions';
+    ui.quickMic.disabled=micModeChanging||Boolean(selectedTx)||joinInProgress>0;
+    ui.quickMic.setAttribute('aria-pressed',String(pttOnlyMicrophone));
+    ui.quickMic.dataset.state=micModeChanging?'pending':pttOnlyMicrophone?'on':'off';
+  }
   if(ui.pttOnlyMicrophone){ui.pttOnlyMicrophone.checked=pttOnlyMicrophone;ui.pttOnlyMicrophone.disabled=micModeChanging||Boolean(selectedTx);}
   if(ui.pttReadyCue){
     ui.pttReadyCue.checked=pttReadyCue;
@@ -1129,6 +1160,10 @@ async function setPTTOnlyMicrophone(enabled){
       (rejoin.length?' Channels rejoining.':''));
   }finally{micModeChanging=false;renderMicMode();updateAll();}
 }
+ui.quickMic?.addEventListener('click',()=>{
+  logRadio('QUICK MIC','','requested '+(!pttOnlyMicrophone?'PTT only':'always ready'));
+  void setPTTOnlyMicrophone(!pttOnlyMicrophone);
+});
 ui.pttOnlyMicrophone?.addEventListener('change',()=>{void setPTTOnlyMicrophone(ui.pttOnlyMicrophone.checked);});
 ui.pttReadyCue?.addEventListener('change',()=>{
   pttReadyCue=Boolean(ui.pttReadyCue.checked);
@@ -1213,7 +1248,7 @@ async function joinChannel(c){
     setMessage('Joined '+c.title+'. Keep this page open while using the radio.');
     updateAll();
   }catch(err){reportError(err?.message||'Cannot start the channel.');setMessage('Unable to join '+c.title);}
-  finally{joinInProgress--;releaseMicrophoneIfUnused();closeStandbyAudioIfUnused();}
+  finally{joinInProgress--;releaseMicrophoneIfUnused();closeStandbyAudioIfUnused();renderMicMode();}
 }
 function leaveChannel(id){
   const s=sessions.get(id);
@@ -1292,6 +1327,12 @@ const EXTERNAL_TEST_LIMIT=20000,EXTERNAL_MIN_TEST_HOLD=250,EXTERNAL_MAX_SECONDS=
 const externalEventTime=e=>Number.isFinite(e?.timeStamp)?e.timeStamp:Date.now();
 const externalLabel=b=>b?b.replace(/^(code|key):/,''):'none';
 function renderExternalPTT(){
+  if(ui.quickHeadset){
+    ui.quickHeadset.textContent=externalLearning?'Cancel headset detection':externalEnabled?'Disable headset PTT':'Enable headset PTT';
+    ui.quickHeadset.setAttribute('aria-pressed',String(externalEnabled));
+    ui.quickHeadset.dataset.state=externalLearning?'pending':externalEnabled?'on':'off';
+  }
+  if(ui.quickHeadsetStatus)ui.quickHeadsetStatus.textContent=externalLearning?'Press and release the physical headset button.':externalMessage|| (externalEnabled?'Headset PTT on ('+externalMode+').':externalBinding?'Headset PTT off.':'No headset button configured.');
   if(ui.hardwareLearn)ui.hardwareLearn.textContent=externalLearning?'Stop detection':'Detect headset button';
   if(ui.hardwareClear)ui.hardwareClear.disabled=!externalBinding&&!externalLearning;
   if(ui.hardwareEnabled){ui.hardwareEnabled.checked=externalEnabled;ui.hardwareEnabled.disabled=!externalBinding||externalLearning;}
@@ -1324,7 +1365,7 @@ function hardwareSignature(e){
 function consumeHardwareKey(e){e.preventDefault?.();e.stopPropagation?.();}
 function finishExternalDetection(reason='Detection stopped.'){
   if(externalLearnTimer!==null){clearTimeout(externalLearnTimer);externalLearnTimer=null;}
-  externalLearning=false;externalDown=null;externalMessage=reason;renderExternalPTT();
+  externalLearning=false;quickHeadsetLearning=false;externalDown=null;externalMessage=reason;renderExternalPTT();
 }
 function startExternalDetection(){
   if(externalLearning){finishExternalDetection();return;}
@@ -1355,7 +1396,7 @@ function stopExternalPTT(reason){
 function setExternalEnabled(enabled){
   if(!enabled)stopExternalPTT('External PTT disabled.');
   externalEnabled=Boolean(enabled&&externalBinding);externalNeedsRelease=false;
-  saveExternalPTT();externalMessage='';renderExternalPTT();
+  saveExternalPTT();externalMessage='';externalEvent('PTT SETTING',externalEnabled?'enabled':'disabled');
 }
 function externalKeyDown(e){
   if(e.isComposing||e.defaultPrevented||document.hidden)return;
@@ -1412,10 +1453,12 @@ function externalKeyUp(e){
       // MediaPlayPause is a synthetic pulse on the tested Android headset.
       // Automatically classify it as toggle even if another device reports a longer pulse.
       externalMode=held<EXTERNAL_MIN_TEST_HOLD||/MediaPlayPause|HeadsetHook/i.test(sig)?'toggle':'hold';
+      const autoEnable=quickHeadsetLearning;
       externalBinding=sig;externalEnabled=false;externalNeedsRelease=false;
       saveExternalPTT();
       finishExternalDetection('Detected '+externalLabel(sig)+' ('+held+' ms). '+(externalMode==='toggle'?'Press once to start, again to stop.':'Hold to talk; release to stop.')+' Check Enable headset PTT.');
       externalEvent('VERIFIED BUTTON',externalLabel(sig)+'; '+held+' ms; '+externalMode);
+      if(autoEnable)setExternalEnabled(true);
     }
     return;
   }
@@ -1448,7 +1491,7 @@ async function checkExternalAudio(){
   }
 }
 function hardwareDiagnosticReport(){
-  return ['Relay One V6.14 external PTT diagnostics',
+  return ['Relay One V6.15 external PTT diagnostics',
     'Recorded: '+new Date().toISOString(),'Browser: '+(navigator.userAgent||'not exposed'),
     'Page visible: '+!document.hidden,'Detection active: '+externalLearning,
     'Detected binding: '+externalLabel(externalBinding),
@@ -1466,6 +1509,13 @@ function hardwareDiagnosticReport(){
     'Status: '+(externalMessage||'none'),'','Button events (no audio, transcript, PIN or device IDs):',...externalEvents].join('\n');
 }
 ui.hardwareStop?.addEventListener('click',()=>stopExternalPTT('Stopped from screen.'));
+ui.quickHeadset?.addEventListener('click',()=>{
+  if(externalLearning){finishExternalDetection();externalEvent('QUICK DETECTION CANCELLED');return;}
+  if(externalBinding){setExternalEnabled(!externalEnabled);return;}
+  ui.quickHeadset?.blur?.();
+  startExternalDetection();
+  quickHeadsetLearning=externalLearning;
+});
 ui.hardwareLearn?.addEventListener('click',startExternalDetection);
 ui.hardwareClear?.addEventListener('click',resetExternalBinding);
 ui.hardwareEnabled?.addEventListener('change',()=>setExternalEnabled(ui.hardwareEnabled.checked));
