@@ -18,6 +18,7 @@ class FakeElement {
     this.style={setProperty(){}};this.dataset={};this.disabled=false;this.checked=false;
     this.muted=false;this.attributes={};this.classes=new Set();
     this.classList={
+      contains:name=>this.classes.has(name),
       add:(...names)=>names.forEach(n=>this.classes.add(n)),
       remove:(...names)=>names.forEach(n=>this.classes.delete(n)),
       toggle:(name,force)=>{if(force===undefined)force=!this.classes.has(name);
