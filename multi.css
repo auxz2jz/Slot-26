@@ -280,3 +280,7 @@ body.radio-compact .group-people,body.radio-compact .group-msg{display:none}
 .hardware-ptt-buttons button{min-height:40px;white-space:normal;flex:1;min-width:116px;font-size:12px}
 #hardwareStatus{color:#a9ead3;font-weight:650;overflow-wrap:anywhere}
 #hardwareLog{max-height:165px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:11px}
+
+/* V6.11 external toggle controls */
+.hardware-ptt select{width:100%;min-height:40px;border-radius:8px;padding:8px;background:#173447;color:#f2f9f8;border:1px solid #4b7380;font-size:13px}
+.hardware-ptt .hardware-stop:not(:disabled){background:#8b292f;color:#fff;border-color:#c95b60;font-weight:750}

@@ -832,3 +832,43 @@ test('V6.10: immediate media tap pairs cannot be mistaken for held PTT',()=>{
   assert.match(a.hardwareDiagnosticReport(),/TEST HOLD TOO SHORT/);
   a.ui.hardwareLearn.listeners.click[0]();
 });
+
+function mediaPulse(a,t=100){
+  const props={key:'MediaPlayPause',code:''};
+  a.fireWindow('keydown',{...props,timeStamp:t});flush();
+  a.fireWindow('keyup',{...props,timeStamp:t+145});flush();
+}
+function learnToggle(a){
+  a.ui.hardwareMode.value='toggle';a.ui.hardwareMode.listeners.change[0]();
+  a.ui.hardwareLearn.listeners.click[0]();
+  mediaPulse(a);
+  assert.equal(a.ui.hardwareBind.disabled,false,'short pulse is valid in explicit toggle mode');
+  a.ui.hardwareBind.listeners.click[0]();
+  a.ui.hardwareEnabled.checked=true;a.ui.hardwareEnabled.listeners.change[0]();
+}
+test('V6.11: 145 ms media pulse toggles PTT, keyup does not stop it, next pulse stops',async()=>{
+  const room=presets.CHANNEL_PRESETS[0];const a=browser('Toggle headset',[]);
+  await a.joinChannel(room);flush();const s=a.sessions.get(room.id);
+  learnToggle(a);assert.equal(s.transmitting,false,'learning never transmits');
+  mediaPulse(a,1000);assert.equal(s.transmitting,true);assert.equal(a.ui.hardwareStop.disabled,false);
+  a.fireWindow('keydown',{key:'MediaPlayPause',code:'',repeat:true});flush();assert.equal(s.transmitting,true);
+  mediaPulse(a,2000);assert.equal(s.transmitting,false);assert.equal(a.ui.hardwareStop.disabled,true);
+  assert.match(a.hardwareDiagnosticReport(),/External button mode: toggle/);
+  assert.match(a.hardwareDiagnosticReport(),/Live external presses: 1/);
+  assert.match(a.hardwareDiagnosticReport(),/Live external releases: 1/);
+  mediaPulse(a,3000);assert.equal(s.transmitting,true);
+  a.ui.hardwareStop.listeners.click[0]();flush();assert.equal(s.transmitting,false);
+  mediaPulse(a,4000);a.fireWindow('blur');flush();assert.equal(s.transmitting,false);
+  a.leaveChannel(room.id);
+});
+test('V6.11: toggle controls on-demand mic and stops it on second pulse, mode switch requires new binding',async()=>{
+  const room=presets.CHANNEL_PRESETS[0];const a=browser('Toggle cold mic',[],true,{pttMic:true});
+  await a.setPTTOnlyMicrophone(true);learnToggle(a);await a.joinChannel(room);flush();
+  const s=a.sessions.get(room.id);assert.equal(a.mediaRequests.length,0);
+  mediaPulse(a,1000);await Promise.resolve();flush();
+  assert.equal(s.transmitting,true);assert.equal(a.mediaRequests.length,1);
+  mediaPulse(a,3000);assert.equal(s.transmitting,false);assert.equal(a.mediaRequests[0].readyState,'ended');
+  a.ui.hardwareMode.value='hold';a.ui.hardwareMode.listeners.change[0]();
+  assert.equal(a.ui.hardwareEnabled.checked,false);assert.equal(a.ui.hardwareEnabled.disabled,true);
+  a.leaveChannel(room.id);
+});

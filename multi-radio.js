@@ -33,6 +33,7 @@ const ui = {
   pttReadyCue:$('pttReadyCue'),micDelayStatus:$('micDelayStatus'),
   hardwareLearn:$('hardwareLearn'),hardwareBind:$('hardwareBind'),hardwareClear:$('hardwareClear'),
   hardwareEnabled:$('hardwareEnabled'),hardwareStatus:$('hardwareStatus'),hardwareLog:$('hardwareLog'),
+  hardwareMode:$('hardwareMode'),hardwareTimeout:$('hardwareTimeout'),hardwareCue:$('hardwareCue'),hardwareStop:$('hardwareStop'),
   hardwareAudioCheck:$('hardwareAudioCheck'),hardwareAudioStatus:$('hardwareAudioStatus'),hardwareCopy:$('hardwareCopy'),
   transcriptEnabled:$('transcriptEnabled'),transcriptKeep:$('transcriptKeep'),
   transcriptStatus:$('transcriptStatus'),transcriptLog:$('transcriptLog'),
@@ -170,6 +171,9 @@ let standbyAudioContext=null;
 const savedExternal=storeGet(EXTERNAL_PTT_KEY,{});
 let externalBinding=typeof savedExternal?.binding==='string' && /^(code|key):[A-Za-z0-9_-]{1,70}$/.test(savedExternal.binding)?savedExternal.binding:null;
 let externalEnabled=Boolean(externalBinding&&savedExternal?.enabled===true);
+let externalMode=savedExternal?.mode==='toggle'?'toggle':'hold';
+let externalTimeout=[15,30,45].includes(savedExternal?.timeout)?savedExternal.timeout:45;
+let externalCue=savedExternal?.cue!==false;
 let externalSession=null,externalWatchdog=null,externalLearning=false,externalLearnTimer=null;
 let externalCandidate=null,externalDown=null,externalMessage='',externalPressedAt=0;
 let externalNeedsRelease=false;
@@ -246,7 +250,7 @@ function speechDiagnosticReport(){
     s.room.title+': '+(s.track?.readyState||'no track')+', enabled='+Boolean(s.track?.enabled)+
     ', transmitting='+Boolean(s.transmitting)+', floor='+Boolean(s.floor===s.myId));
   return [
-    'Relay One V6.10 speech diagnostics',
+    'Relay One V6.11 speech diagnostics',
     'PTT-only mic presses: '+pttTiming.presses,
     'PTT-only completed transmit activations: '+pttTiming.readyCount,
     'PTT-only last mic acquired after: '+(pttTiming.lastMicMs===null?'not measured':pttTiming.lastMicMs+' ms'),
@@ -874,7 +878,7 @@ function diagnosticReport(){
       ', voice '+audio+'/'+peers.length+', ICE '+ice;
   });
   const data=usageMeter.snapshot();
-  return ['Relay One V6.10 connection diagnostics',
+  return ['Relay One V6.11 connection diagnostics',
     'Microphone mode: '+(pttOnlyMicrophone?'PTT only':'always ready'),
     'Radio mode: '+radioMode,
     'Estimated WebRTC session: sent '+formatDataBytes(data.session.tx)+', received '+formatDataBytes(data.session.rx),
@@ -910,13 +914,14 @@ function playTone(kind){
     if(!ctx || ctx.state!=='running')return;
     const start=ctx.currentTime+0.02;
     const bursts=kind==='call'?[{at:0,len:0.24,hz:960},{at:.32,len:.24,hz:960}]:
-      kind==='ready'?[{at:0,len:.095,hz:1180}]:[{at:0,len:.18,hz:880}];
+      kind==='ready'?[{at:0,len:.095,hz:1180}]:
+      kind==='toggle-stop'?[{at:0,len:.12,hz:560}]:[{at:0,len:.18,hz:880}];
     for(const b of bursts){
       const osc=ctx.createOscillator(),gain=ctx.createGain();
-      osc.type=kind==='call'||kind==='ready'?'sine':'square';
+      osc.type=['call','ready','toggle-stop'].includes(kind)?'sine':'square';
       osc.frequency.setValueAtTime(b.hz,start+b.at);
       if(kind==='squawk')osc.frequency.exponentialRampToValueAtTime(530,start+b.at+b.len);
-      const volume=kind==='ready'?.06:.11;
+      const volume=['ready','toggle-stop'].includes(kind)?.06:.11;
       gain.gain.setValueAtTime(.001,start+b.at);
       gain.gain.linearRampToValueAtTime(volume,start+b.at+.018);
       gain.gain.setValueAtTime(volume,start+b.at+b.len-.04);
@@ -1221,7 +1226,12 @@ function startPTT(s){
 }
 function releaseTalk(s){
   if(!s)return;
-  if(externalSession===s)clearExternalSession(s);
+  if(externalSession===s){
+    clearExternalSession(s);externalCounts.release++;
+    externalMessage='External transmission stopped.';
+    externalEvent('EXTERNAL PTT RELEASE','Radio released');
+    if(externalMode==='toggle'&&externalCue)playTone('toggle-stop');
+  }
   if(s.pttMode && !s.transmitting){
     pttTiming.cancelledBeforeReady++;
     speechEvent('PTT ENDED BEFORE READY','release without active transmission');
@@ -1245,7 +1255,7 @@ function releaseTalk(s){
 /* V6.10: browser-exposed hardware keyboard/HID-style down/up events only.
  * Learning never transmits. Outside explicit learning, ignore unbound keys.
  */
-const EXTERNAL_HOLD_LIMIT=45000,EXTERNAL_TEST_LIMIT=20000,EXTERNAL_MIN_TEST_HOLD=250;
+const EXTERNAL_TEST_LIMIT=20000,EXTERNAL_MIN_TEST_HOLD=250;
 const externalEventTime=e=>Number.isFinite(e?.timeStamp)?e.timeStamp:Date.now();
 const externalLabel=b=>b?b.replace(/^(code|key):/,''):'none';
 function renderExternalPTT(){
@@ -1253,8 +1263,12 @@ function renderExternalPTT(){
   if(ui.hardwareBind)ui.hardwareBind.disabled=externalLearning||!externalCandidate||Boolean(selectedTx);
   if(ui.hardwareClear)ui.hardwareClear.disabled=!externalBinding&&!externalCandidate;
   if(ui.hardwareEnabled){ui.hardwareEnabled.checked=externalEnabled;ui.hardwareEnabled.disabled=!externalBinding||externalLearning;}
+  if(ui.hardwareMode){ui.hardwareMode.value=externalMode;ui.hardwareMode.disabled=Boolean(externalSession);}
+  if(ui.hardwareTimeout){ui.hardwareTimeout.value=String(externalTimeout);ui.hardwareTimeout.disabled=Boolean(externalSession);}
+  if(ui.hardwareCue)ui.hardwareCue.checked=externalCue;
+  if(ui.hardwareStop)ui.hardwareStop.disabled=!externalSession;
   if(ui.hardwareStatus)ui.hardwareStatus.textContent=externalMessage||
-    (externalBinding?(externalEnabled?'Enabled: ':'Bound, disabled: ')+externalLabel(externalBinding)+'. Hold and release your headset button.':'No external button configured.');
+    (externalBinding?(externalEnabled?'Enabled: ':'Bound, disabled: ')+externalLabel(externalBinding)+(externalMode==='toggle'?'. Press once to start, again to stop.':'. Hold and release your headset button.'):'No external button configured.');
   if(ui.hardwareLog)ui.hardwareLog.textContent=externalEvents.length?externalEvents.join('\n'):'No hardware button test yet.';
 }
 function externalEvent(kind,detail=''){
@@ -1262,7 +1276,16 @@ function externalEvent(kind,detail=''){
   if(externalEvents.length>40)externalEvents.shift();
   renderExternalPTT();
 }
-function saveExternalPTT(){storeSet(EXTERNAL_PTT_KEY,{binding:externalBinding,enabled:externalEnabled});}
+function saveExternalPTT(){storeSet(EXTERNAL_PTT_KEY,{binding:externalBinding,enabled:externalEnabled,mode:externalMode,timeout:externalTimeout,cue:externalCue});}
+function changeExternalMode(mode){
+  if(!['hold','toggle'].includes(mode)||mode===externalMode||externalSession){renderExternalPTT();return;}
+  if(externalLearning)finishExternalDetection();
+  // Require a new learning test; a short pulse must never become a hold binding.
+  externalMode=mode;externalBinding=null;externalCandidate=null;externalEnabled=false;externalNeedsRelease=false;
+  if(mode==='toggle')externalTimeout=30;
+  saveExternalPTT();externalMessage='Mode changed. Detect your button again, save it, then enable external PTT.';
+  externalEvent('MODE CHANGED',mode);
+}
 function editableKeyTarget(target){
   return Boolean(target?.isContentEditable||target?.closest?.('input,textarea,select,[contenteditable="true"]')||['INPUT','TEXTAREA','SELECT'].includes(target?.tagName));
 }
@@ -1286,7 +1309,7 @@ function startExternalDetection(){
   externalCounts.testDown=0;externalCounts.testUp=0;externalCounts.unknown=0;
   externalMessage='Listening for the physical button for 20 seconds. No radio transmission.';
   ui.hardwareLearn?.blur?.();
-  externalEvent('DETECTION START','Hold the headset button for one second, then release');
+  externalEvent('DETECTION START',externalMode==='toggle'?'Tap and release the headset button once':'Hold the headset button for one second, then release');
   externalLearnTimer=setTimeout(()=>{
     finishExternalDetection(externalCounts.testDown?'No matching release reached Chrome. This button cannot be safely bound.':'No button press reached Chrome. Android may be intercepting it.');
     externalEvent('DETECTION TIMEOUT','No verified press/release pair');
@@ -1302,6 +1325,8 @@ function stopExternalPTT(reason){
   if(!session)return;
   externalCounts.release++;externalMessage=reason;externalEvent('EXTERNAL PTT RELEASE',reason);
   if(selectedTx===session)releaseTalk(session);
+  if(externalMode==='toggle'&&externalCue)playTone('toggle-stop');
+  renderExternalPTT();
 }
 function setExternalEnabled(enabled){
   if(!enabled)stopExternalPTT('External PTT disabled.');
@@ -1322,22 +1347,31 @@ function externalKeyDown(e){
   }
   if(!externalEnabled||!sig||sig!==externalBinding)return;
   consumeHardwareKey(e);
-  if(e.repeat||externalSession||selectedTx||externalNeedsRelease)return;
+  if(e.repeat||externalNeedsRelease)return;
   externalNeedsRelease=true;
+  if(externalSession){
+    if(externalMode==='toggle')stopExternalPTT('External toggle pressed again; transmission stopped.');
+    return;
+  }
+  if(selectedTx)return;
   const target=sessions.get(focusedId);
   if(!target||!target.ready()||target.floor&&target.floor!==target.myId){
     externalMessage='Button detected, but the selected channel is not ready for Talk.';
     externalEvent('EXTERNAL PTT BLOCKED','No idle joined target');return;
   }
+  // Mark ownership before starting: host floor authorization can be synchronous.
+  externalSession=target;
   startPTT(target);
-  if(selectedTx!==target||!target.wantTalk)return;
-  externalSession=target;externalCounts.press++;
-  externalMessage='External PTT held on '+target.room.title+'. Release to stop.';
-  externalEvent('EXTERNAL PTT PRESS',target.room.title);
+  if(selectedTx!==target||!target.wantTalk){clearExternalSession(target);return;}
+  externalCounts.press++;
+  externalMessage=externalMode==='toggle'?
+    'External toggle ON on '+target.room.title+'. Wait for TRANSMITTING; press again or tap Talk to stop.':
+    'External PTT held on '+target.room.title+'. Release to stop.';
+  externalEvent('EXTERNAL PTT PRESS',target.room.title+'; '+externalMode);
   externalWatchdog=setTimeout(()=>{
     externalCounts.timeout++;
-    stopExternalPTT('Safety timeout: Talk released after 45 seconds. Release button before pressing again.');
-  },EXTERNAL_HOLD_LIMIT);
+    stopExternalPTT('Safety timeout: Talk stopped after '+externalTimeout+' seconds.');
+  },externalTimeout*1000);
 }
 function externalKeyUp(e){
   const sig=hardwareSignature(e);
@@ -1348,27 +1382,27 @@ function externalKeyUp(e){
     externalEvent('TEST RELEASE',externalLabel(sig));
     if(externalDown===sig){
       const held=Math.round(Math.max(0,externalEventTime(e)-externalPressedAt));
-      if(held<EXTERNAL_MIN_TEST_HOLD){
+      if(externalMode==='hold'&&held<EXTERNAL_MIN_TEST_HOLD){
         externalDown=null;externalCandidate=null;
         externalMessage='Only a '+held+' ms tap reached Chrome. Try holding the physical button for one second. Instantaneous media actions cannot be safely bound.';
         externalEvent('TEST HOLD TOO SHORT',externalLabel(sig)+'; '+held+' ms');
         return;
       }
       externalCandidate=sig;
-      finishExternalDetection('Verified '+externalLabel(sig)+': matching press AND release. Tap Use detected button.');
+      finishExternalDetection('Verified '+externalLabel(sig)+(externalMode==='toggle'?': button pulse can control toggle mode.':': matching press AND release.')+' Tap Use detected button.');
       externalEvent('VERIFIED BUTTON',externalLabel(sig)+'; held '+held+' ms');
     }
     return;
   }
   if(sig&&sig===externalBinding&&externalEnabled){
     consumeHardwareKey(e);externalNeedsRelease=false;
-    stopExternalPTT('External button released.');
+    if(externalMode==='hold')stopExternalPTT('External button released.');
   }
 }
 function acceptExternalBinding(){
   if(externalLearning||!externalCandidate||selectedTx)return;
   externalBinding=externalCandidate;externalCandidate=null;externalEnabled=false;externalNeedsRelease=false;
-  saveExternalPTT();externalMessage='Saved '+externalLabel(externalBinding)+'. Enable external hold-to-talk to use it.';
+  saveExternalPTT();externalMessage='Saved '+externalLabel(externalBinding)+'. Enable external PTT to use it.';
   externalEvent('BINDING SAVED',externalLabel(externalBinding));
 }
 function resetExternalBinding(){
@@ -1395,10 +1429,11 @@ async function checkExternalAudio(){
   }
 }
 function hardwareDiagnosticReport(){
-  return ['Relay One V6.10 external PTT diagnostics',
+  return ['Relay One V6.11 external PTT diagnostics',
     'Recorded: '+new Date().toISOString(),'Browser: '+(navigator.userAgent||'not exposed'),
     'Page visible: '+!document.hidden,'Detection active: '+externalLearning,
     'Verified candidate: '+externalLabel(externalCandidate),'Saved binding: '+externalLabel(externalBinding),
+    'External button mode: '+externalMode,'External timeout: '+externalTimeout+' seconds',
     'External PTT enabled: '+externalEnabled,'External PTT held: '+Boolean(externalSession),
     'Test presses: '+externalCounts.testDown,'Test releases: '+externalCounts.testUp,
     'Unidentified events: '+externalCounts.unknown,
@@ -1407,6 +1442,14 @@ function hardwareDiagnosticReport(){
     'Microphone mode: '+(pttOnlyMicrophone?'PTT only':'always ready'),
     'Status: '+(externalMessage||'none'),'','Button events (no audio, transcript, PIN or device IDs):',...externalEvents].join('\n');
 }
+ui.hardwareMode?.addEventListener('change',()=>changeExternalMode(ui.hardwareMode.value));
+ui.hardwareTimeout?.addEventListener('change',()=>{
+  const value=Number(ui.hardwareTimeout.value);
+  if(!externalSession&&[15,30,45].includes(value)){externalTimeout=value;saveExternalPTT();}
+  renderExternalPTT();
+});
+ui.hardwareCue?.addEventListener('change',()=>{externalCue=Boolean(ui.hardwareCue.checked);saveExternalPTT();});
+ui.hardwareStop?.addEventListener('click',()=>stopExternalPTT('Stopped from screen.'));
 ui.hardwareLearn?.addEventListener('click',startExternalDetection);
 ui.hardwareBind?.addEventListener('click',acceptExternalBinding);
 ui.hardwareClear?.addEventListener('click',resetExternalBinding);
@@ -1425,6 +1468,7 @@ function bindHold(button,resolve){
   button.addEventListener('pointerdown',e=>{
     if(e.button!==0 && e.pointerType==='mouse')return;
     e.preventDefault();const s=resolve();
+    if(externalSession&&externalMode==='toggle'){stopExternalPTT('Stopped with touchscreen Talk.');return;}
     if(!s || externalSession || selectedTx)return;
     try{button.setPointerCapture(e.pointerId);}catch{}
     startPTT(s);
@@ -1536,8 +1580,9 @@ class ChannelSession{
           pttTiming.lastReadyMs=time;pttTiming.readyCount++;
           speechEvent('PTT TRANSMIT READY','after '+time+' ms from press');
           renderMicMode();
-          if(pttReadyCue)playTone('ready');
+          if(pttReadyCue && !(externalSession===this&&externalMode==='toggle'&&externalCue))playTone('ready');
         }
+        if(externalSession===this&&externalMode==='toggle'&&externalCue)playTone('ready');
         speechDidTransmit(this);updateRow(this.publicId);updateQuick();
       }
     };

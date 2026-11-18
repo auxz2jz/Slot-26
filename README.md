@@ -4,6 +4,12 @@
 
 This is a browser-based push-to-talk prototype for a shared set of **ten fixed channels**. Every user sees the exact same channels. No individual invitation, channel creation, or channel distribution is required.
 
+## V6.11 — External headset press-to-toggle mode
+
+Some Android USB-C PTT headsets present only a standardized MediaPlayPause pulse (observed 144–145 ms regardless of the physical hold duration). Select **Press to toggle** in External USB-C / headset PTT, run Detect button and save the matching pulse, then enable external PTT. The next pulse starts transmission and its keyup does not stop it; a second press stops transmission. Hold mode still requires a verified 250 ms or longer press/release pair. Changing modes clears the old binding to prevent a pulse accidentally becoming a hold binding.
+
+Both microphone modes and existing local Whisper use the same radio path. Always-ready is recommended for fast start; PTT-only still incurs Android microphone startup. Toggle mode defaults to a 30-second limit (15/30/45 seconds selectable); lose-focus/page-hidden, touchscreen Talk or STOP EXTERNAL TRANSMISSION, disabling the feature, or the next key pulse all stop it. A short high ready cue when voice is enabled and a low stop cue are optional and use Android's current audio output route. Hardware testing is required; no claim of actual physical hold detection, screen-off routing, or earbud routing. Rollback: https://auxz2jz.github.io/Slot-26/legacy-v6-10.html
+
 ## V6.10 — External USB-C / headset PTT (browser compatibility test)
 
 Connect the headset and expand **External USB-C / headset PTT**. **Detect button** listens for browser keyboard/HID-style press AND release events for 20 seconds without transmitting. Hold the button for one second during detection. Matching events less than 250 ms apart are rejected as possibly synthetic media taps. Once a real hold is verified, save the binding and explicitly enable it. The selected channel's usual PTT, microphone mode and Whisper paths are used. Repeat events, editable fields, and unrelated pointer releases are handled; losing focus, hiding the page, or a 45-second maximum hold releases Talk. A fresh release is required after a watchdog stop.
