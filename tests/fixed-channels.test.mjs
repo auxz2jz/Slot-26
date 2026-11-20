@@ -120,7 +120,7 @@ const environmentNames=[
   'URLSearchParams','Worker','setTimeout','clearTimeout','setInterval','clearInterval'
 ];
 const appFactory=new Function(...utilityNames,...environmentNames,source+
-  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,setTranscriptMode,loadLocalAsr,hardwareDiagnosticReport,diagnosticReport,networkStatsLine,sampleDataUsage,watchNetworkPeer,setPTTOnlyMicrophone,getPTTOnlyMicrophone:()=>pttOnlyMicrophone,getAsrState:()=>asrState,getAsrStats:()=>asrStats,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
+  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,setTranscriptMode,loadLocalAsr,hardwareDiagnosticReport,diagnosticReport,checkInternetReachability,networkStatsLine,sampleDataUsage,watchNetworkPeer,setPTTOnlyMicrophone,getPTTOnlyMicrophone:()=>pttOnlyMicrophone,getAsrState:()=>asrState,getAsrStats:()=>asrStats,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
 const utilsForTest={
   ...utils,...presets,WebRTCUsageMeter,formatDataBytes,
   checkChannelPin:(channel,pin)=>presets.checkChannelPin(channel,pin,webcrypto),
@@ -204,7 +204,7 @@ function browser(name,rooms,speechSupported=true,options={}){
     close(){this.state='closed';return Promise.resolve();}
   }
   const windowListeners={};
-  const window={isSecureContext:true,Peer,addEventListener(type,fn){(windowListeners[type]??=[]).push(fn);},
+  const window={isSecureContext:true,Peer,fetch:options.fetch,addEventListener(type,fn){(windowListeners[type]??=[]).push(fn);},
     SpeechRecognition:speechSupported?FakeRecognition:undefined,
     MediaRecorder:options.local?FakeRecorder:undefined,
     AudioContext:options.local||options.pttMic?FakeAudioContext:undefined,
@@ -859,7 +859,7 @@ test('V6.14: beep test waits for suspended audio context without opening a micro
   assert.equal(a.toneStarts.length,1);
   assert.equal(a.mediaRequests.length,0);
   const report=a.diagnosticReport();
-  assert.match(report,/Relay One V6.16 global diagnostics/);
+  assert.match(report,/Relay One V6.17 global diagnostics/);
   assert.match(report,/TONE REQUEST/);
   assert.match(report,/TONE SCHEDULED/);
   assert.match(report,/Tone requests: 1; scheduled: 1/);
@@ -946,4 +946,27 @@ test('V6.16: manual details, marker and network snapshots are in global export',
   assert.match(report,/USER MARK: TEST START/);assert.match(report,/USER MARK: PROBLEM NOW/);
   assert.match(report,/Recent network \/ peer samples/);assert.match(report,/Samples [1-9]/);
   a.leaveChannel(c.id);
+});
+
+test('V6.17: receiver and coordinator record remote talk control without callsigns or payloads',async()=>{
+  const room=presets.CHANNEL_PRESETS[0],a=browser('Secret Coordinator',[]),b=browser('Secret Transmitter',[]),c=browser('Secret Receiver',[]);
+  for(const x of [a,b,c]){await x.joinChannel(room);flush();}
+  for(let i=0;i<3;i++){for(const tick of intervals.values())tick();flush();}
+  b.startPTT(b.sessions.get(room.id));flush();
+  assert.equal(b.sessions.get(room.id).transmitting,true);
+  assert.match(a.diagnosticReport(),/RX TALK REQUEST/);
+  assert.match(c.diagnosticReport(),/RX FLOOR UPDATE/);
+  assert.match(c.diagnosticReport(),/FLOOR TRANSITION.*idle -> Radio /);
+  b.releaseTalk(b.sessions.get(room.id));flush();
+  assert.match(a.diagnosticReport(),/RX TALK RELEASE/);
+  assert.match(c.diagnosticReport(),/Radio \d+ -> idle/);
+  assert.match(c.diagnosticReport(),/INCOMING VOICE STREAM/);
+  assert.doesNotMatch(c.diagnosticReport(),/Secret Coordinator|Secret Transmitter|Secret Receiver/);
+  for(const x of [b,c,a])x.leaveChannel(room.id);
+});
+test('V6.17: internet reachability is opt-in and exports success/failure without raw errors',async()=>{
+  let calls=0;const a=browser('Probe',[],true,{fetch:async()=>{calls++;if(calls===2)throw Error('private error text');return {ok:true,status:200,text:async()=> 'relay-one-reachable'};}});
+  assert.equal(calls,0);await a.checkInternetReachability();assert.match(a.diagnosticReport(),/HTTPS same-site OK/);
+  await a.checkInternetReachability();assert.match(a.diagnosticReport(),/HTTPS same-site failed/);
+  assert.doesNotMatch(a.diagnosticReport(),/private error text/);assert.equal(calls,2);
 });

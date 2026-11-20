@@ -1,6 +1,10 @@
-# Relay One — Detailed cellular and WebRTC diagnostics (V6.16)
+# Relay One — Incoming radio and reachability diagnostics (V6.17)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
+
+## V6.17 — Receive-side disconnect investigation
+
+Automatic incoming-control timeline records requests at the coordinator, floor updates and transitions at receivers, joins, stream arrival, audio track mute/unmute/end, playback readiness, data/voice closures, heartbeat timeouts, approximate heartbeat RTT and recent activity. Temporary radio labels correlate data and voice links locally only. No new radio protocol messages, audio content, callsigns or raw IDs in this new timeline. An optional five-second same-site HTTPS reachability check (off by default) or manual check helps distinguish website reachability from PeerJS/ICE failures. Requests use small uncached text resource, a 3.5-second timeout and no credentials. Success tests this site only; failure is not proof of cellular loss. All reports remain global. Preserve V6.16 at https://auxz2jz.github.io/Slot-26/legacy-v6-16.html.
 
 ## V6.16 — Cellular and multi-peer investigation
 
