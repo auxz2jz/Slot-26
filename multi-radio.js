@@ -9,6 +9,8 @@ import {WebRTCUsageMeter,formatDataBytes} from './usage-meter.mjs';
 const $ = id => document.getElementById(id);
 const ui = {
   quickSpeech:$('quickSpeech'),quickHeadset:$('quickHeadset'),quickMic:$('quickMic'),quickHeadsetStatus:$('quickHeadsetStatus'),
+  diagPhone:$('diagPhone'),diagCarrier:$('diagCarrier'),diagRadio:$('diagRadio'),diagSignal:$('diagSignal'),
+  diagMarker:$('diagMarker'),diagBaseline:$('diagBaseline'),diagNetStatus:$('diagNetStatus'),downloadDiagnostics:$('downloadDiagnostics'),
   list:$('channelList'), name:$('displayName'), colors:$('colors'),
   txTone:$('txTone'), rxTone:$('rxTone'), alertTone:$('alertTone'),
   message:$('channelMessage'), error:$('errorMessage'), count:$('joinCount'),
@@ -153,7 +155,20 @@ async function sampleDataUsage(){
       if(data)pcs.push(data);
     }
   }
-  try{await usageMeter.sample(pcs);}catch(err){logRadio('USAGE SAMPLE ERROR','',err?.name||'getStats failed');}
+  const contexts=new Map();
+  for(const session of sessions.values())for(const member of session.members.values()){
+    for(const [kind,pc] of [['voice',member.call?.peerConnection],['data',member.data?.peerConnection]])if(pc){
+      contexts.set(pc,watchNetworkPeer(pc,session,kind));
+    }
+  }
+  const capturedAt=Date.now(),results=[];
+  try{
+    const sampled=await usageMeter.sample(pcs,(pc,result)=>{
+      const ctx=contexts.get(pc);
+      if(ctx)results.push(networkStatsLine(ctx,result));
+    });
+    if(sampled!==null&&sessions.size)recordNetworkSample(capturedAt,results);
+  }catch(err){logRadio('USAGE SAMPLE ERROR','',err?.name||'getStats failed');}
   renderDataUsage();
 }
 ui.resetDataSaved?.addEventListener('click',()=>{
@@ -247,7 +262,7 @@ function speechDiagnosticReport(){
     s.room.title+': '+(s.track?.readyState||'no track')+', enabled='+Boolean(s.track?.enabled)+
     ', transmitting='+Boolean(s.transmitting)+', floor='+Boolean(s.floor===s.myId));
   return [
-    'Relay One V6.15 speech diagnostics',
+    'Relay One V6.16 speech diagnostics',
     'Transcription engine: '+transcriptMode,
     'On-device model state: '+asrState,
     'On-device recording active: '+Boolean(asrActive),
@@ -881,6 +896,157 @@ function logRadio(event,channel='',detail=''){
   if(ui.diagnostics)ui.diagnostics.textContent=diagnosticEvents.join('\n');
   // Avoid logging callsigns, room IDs, PINs, conversation content, or microphone recordings.
 }
+
+/* V6.16 read-only network diagnostics. Raw WebRTC reports, addresses, SDP,
+ * identifiers and candidate URLs NEVER enter diagnostic history/export.
+ * Reuse the existing four-second data-meter getStats call. */
+const NET_ROWS_LIMIT=90,NET_EVENT_LIMIT=180;
+const netTimeline=[],netEvents=[],netPeerContext=new WeakMap();
+let netLinkCounter=0,netSampleCount=0,netClockStart=Date.now(),netLastSample=null;
+let netDeviceInfo='UA client hints unavailable or not yet returned';
+let netLastState='',netLastStatsCount=0,netStatsErrors=0;
+const netNum=(x,scale=1)=>typeof x==='number'&&Number.isFinite(x)?String(Math.round(x*scale*100)/100):'n/a';
+const netEnum=(x,allowed)=>allowed.includes(x)?x:'n/a';
+const netState=x=>netEnum(x,['new','checking','connecting','connected','completed','disconnected','failed','closed','stable','have-local-offer','have-remote-offer','have-local-pranswer','have-remote-pranswer','gathering','complete']);
+const netType=x=>netEnum(x,['host','srflx','prflx','relay']);
+const netProto=x=>netEnum(x,['udp','tcp','tls']);
+function connectionSnapshot(){
+  const c=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+  return ['online='+(navigator.onLine===false?'no':navigator.onLine===true?'yes':'unknown'),
+    'transport='+netEnum(c?.type,['bluetooth','cellular','ethernet','none','wifi','wimax','other','unknown']),
+    'effective='+netEnum(c?.effectiveType,['slow-2g','2g','3g','4g']),
+    'RTT estimate='+netNum(c?.rtt)+'ms','downlink estimate='+netNum(c?.downlink)+'Mbps',
+    'max downlink='+netNum(c?.downlinkMax)+'Mbps','saveData='+(typeof c?.saveData==='boolean'?c.saveData:'n/a'),
+    'visible='+!document.hidden].join('; ');
+}
+function netNote(kind,details=''){
+  netEvents.push(new Date().toISOString()+' | '+kind+(details?' | '+details:''));
+  if(netEvents.length>NET_EVENT_LIMIT)netEvents.shift();
+}
+function networkStateChanged(reason){
+  const now=connectionSnapshot();
+  netNote(reason,now);netLastState=now;
+  if(ui.diagNetStatus)ui.diagNetStatus.textContent=now+'; '+netSampleCount+' snapshots';
+}
+function readNetworkDevice(){
+  const ua=navigator.userAgentData;
+  if(!ua)return;
+  const safe=x=>typeof x==='string'?x.replace(/[^A-Za-z0-9 ._()+-]/g,'').slice(0,80):'n/a';
+  netDeviceInfo='Platform '+safe(ua.platform)+'; mobile='+Boolean(ua.mobile);
+  if(typeof ua.getHighEntropyValues==='function'){
+    Promise.resolve().then(()=>ua.getHighEntropyValues(['model','platformVersion','fullVersionList','architecture','bitness']))
+      .then(v=>{
+        netDeviceInfo='Model '+(safe(v.model)||'not exposed')+'; OS '+safe(ua.platform)+' '+safe(v.platformVersion)+
+          '; architecture '+safe(v.architecture)+'; bitness '+safe(v.bitness)+'; browser '+(Array.isArray(v.fullVersionList)?v.fullVersionList.slice(0,6).map(b=>safe(b.brand)+' '+safe(b.version)).join(', '):'n/a');
+        netNote('DEVICE HINTS UPDATED');
+      }).catch(()=>netNote('DEVICE HINTS UNAVAILABLE','Browser withheld high-entropy hints'));
+  }
+}
+function netManual(){
+  const safe=(v,n)=>String(v||'').replace(/[^A-Za-z0-9 ._()+-]/g,'').slice(0,n).replace(/\d{7,}/g,'[redacted]')||'not entered';
+  const radio=netEnum(ui.diagRadio?.value,['unknown','LTE','5G','5G UW','Wi-Fi','other']);
+  const raw=String(ui.diagSignal?.value||''),dbm=Number(raw);
+  return 'Model='+safe(ui.diagPhone?.value,60)+'; carrier='+safe(ui.diagCarrier?.value,40)+'; user-reported network='+radio+
+    '; user-reported signal='+(raw&&Number.isFinite(dbm)&&dbm>=-160&&dbm<=-20?dbm+' dBm':'not entered');
+}
+function watchNetworkPeer(pc,session,kind){
+  let ctx=netPeerContext.get(pc);
+  if(ctx)return ctx;
+  ctx={label:'Link '+(++netLinkCounter),channel:session.room.title,kind,last:'',lastPair:'',lastAt:Date.now(),prev:null};
+  netPeerContext.set(pc,ctx);
+  const note=event=>{
+    const state='ICE='+netState(pc.iceConnectionState)+'; PC='+netState(pc.connectionState)+'; signaling='+netState(pc.signalingState)+'; gathering='+netState(pc.iceGatheringState);
+    if(state!==ctx.last||event==='attached'){
+      ctx.last=state;netNote('LINK '+event,ctx.label+' '+ctx.channel+' '+kind+'; '+state);
+    }
+  };
+  note('attached');
+  for(const e of ['iceconnectionstatechange','connectionstatechange','signalingstatechange','icegatheringstatechange'])pc.addEventListener?.(e,()=>note(e));
+  pc.addEventListener?.('icecandidateerror',e=>netNote('ICE CANDIDATE ERROR',ctx.label+' '+ctx.channel+' '+kind+'; numeric code='+netNum(e.errorCode)));
+  return ctx;
+}
+function networkStatsLine(ctx,result){
+  const prefix=ctx.label+' '+ctx.channel+' '+ctx.kind;
+  if(result.status!=='fulfilled'){
+    netStatsErrors++;return prefix+'; getStats failed';
+  }
+  const report=result.value,values=Array.from(report?.values?.()||[]);
+  // IDs are used transiently ONLY to look up types, never exported or retained.
+  const byId=new Map(values.map(v=>[v.id,v]));
+  const tr=values.find(v=>v.type==='transport'&&v.selectedCandidatePairId);
+  const pair=(tr&&byId.get(tr.selectedCandidatePairId))||values.find(v=>v.type==='candidate-pair'&&(v.selected===true||(v.nominated&&v.state==='succeeded')));
+  const local=pair&&byId.get(pair.localCandidateId),remote=pair&&byId.get(pair.remoteCandidateId);
+  const path=netType(local?.candidateType)+'/'+netType(remote?.candidateType)+'; protocol='+netProto(local?.protocol||remote?.protocol);
+  if(pair&&path!==ctx.lastPair){ctx.lastPair=path;netNote('SELECTED ICE PATH',prefix+'; '+path);}
+  const inbound=values.filter(v=>v.type==='inbound-rtp'&&(v.kind||v.mediaType)==='audio');
+  const outbound=values.filter(v=>v.type==='outbound-rtp'&&(v.kind||v.mediaType)==='audio');
+  const remoteInbound=values.filter(v=>v.type==='remote-inbound-rtp'&&(v.kind||v.mediaType)==='audio');
+  const sum=(a,key)=>{const n=a.map(v=>v[key]).filter(v=>typeof v==='number'&&Number.isFinite(v));return n.length?n.reduce((x,y)=>x+y,0):null;};
+  const max=(a,key)=>{const n=a.map(v=>v[key]).filter(v=>typeof v==='number'&&Number.isFinite(v));return n.length?Math.max(...n):null;};
+  const current={rx:sum(inbound,'packetsReceived'),loss:sum(inbound,'packetsLost'),tx:sum(outbound,'packetsSent'),remoteLoss:sum(remoteInbound,'packetsLost'),rxBytes:pair?.bytesReceived,txBytes:pair?.bytesSent};
+  const delta=k=>ctx.prev&&Number.isFinite(current[k])&&Number.isFinite(ctx.prev[k])&&current[k]>=ctx.prev[k]?current[k]-ctx.prev[k]:null;
+  const rx=delta('rx'),loss=delta('loss'),tx=delta('tx'),remoteLoss=delta('remoteLoss');
+  const lossPct=rx!==null&&loss!==null&&rx+loss>0?100*loss/(rx+loss):null;
+  const elapsed=Math.max(.001,(Date.now()-ctx.lastAt)/1000),rxB=delta('rxBytes'),txB=delta('txBytes');
+  const rxK=rxB===null?null:rxB*8/1000/elapsed,txK=txB===null?null:txB*8/1000/elapsed;
+  ctx.prev=current;ctx.lastAt=Date.now();
+  const dc=values.filter(v=>v.type==='data-channel');
+  const codec=values.find(v=>v.type==='codec'&&v.mimeType==='audio/opus')?'opus':values.some(v=>v.type==='codec')?'other':'n/a';
+  return prefix+'; '+(ctx.last||'state unknown')+'; pair='+netEnum(pair?.state,['frozen','waiting','in-progress','failed','succeeded'])+
+    '; path='+path+'; ICE RTT='+netNum(pair?.currentRoundTripTime,1000)+'ms; available TX='+netNum(pair?.availableOutgoingBitrate,.001)+'kbps'+
+    '; interval RX/TX='+netNum(rxK)+'/'+netNum(txK)+'kbps; audio packets RX/TX='+netNum(rx)+'/'+netNum(tx)+
+    '; RX loss='+netNum(loss)+' ('+netNum(lossPct)+'%); remote loss delta='+netNum(remoteLoss)+
+    '; jitter='+netNum(max(inbound,'jitter'),1000)+'ms; remote RTT='+netNum(max(remoteInbound,'roundTripTime'),1000)+'ms'+
+    '; codec='+codec+'; data channel='+([...new Set(dc.map(v=>netEnum(v.state,['connecting','open','closing','closed'])))].join(',')||'n/a');
+}
+function recordNetworkSample(at,lines){
+  netSampleCount++;netLastStatsCount=lines.length;netLastSample=new Date(at).toISOString();
+  const active=[...sessions.values()].map(s=>s.room.title+': '+(s.isHost?'host':'guest')+'; signaling '+(s.peer?.disconnected?'disconnected':s.peer?.open?'open':'waiting')+'; peers '+s.members.size+'; data '+[...s.members.values()].filter(m=>m.data?.open).length+'; voice '+[...s.members.values()].filter(m=>m.stream).length+'; TX '+Boolean(s.transmitting)).join(' / ');
+  netTimeline.push(netLastSample+' | '+connectionSnapshot()+' | '+active+'\n'+(lines.join('\n')||'No getStats-capable active links yet'));
+  if(netTimeline.length>NET_ROWS_LIMIT)netTimeline.shift();
+  if(ui.diagNetStatus)ui.diagNetStatus.textContent=connectionSnapshot()+'; '+netSampleCount+' snapshots, '+lines.length+' link reports in latest sample';
+}
+function networkDiagnosticReport(){
+  return ['--- Device and cellular / WebRTC diagnostics ---',
+    'Diagnostic start UTC: '+new Date(netClockStart).toISOString(),
+    'Device hints: '+netDeviceInfo,
+    'Browser platform: '+String(navigator.platform||'not exposed').slice(0,80),
+    'CPU logical cores: '+netNum(navigator.hardwareConcurrency)+'; reported RAM GB: '+netNum(navigator.deviceMemory),
+    'Manual test details: '+netManual(),
+    'Current network: '+connectionSnapshot(),
+    'Cellular note: effective 4g is an estimated performance class, not LTE/5G or tower radio mode. True signal/carrier not exposed.',
+    'ICE configuration: STUN-only; no configured TURN relay. Host/srflx/prflx/relay = candidate type, not IP address.',
+    'Stats sampling: existing 4-second usage meter; no extra traffic probes. Samples '+netSampleCount+'; latest '+(netLastSample||'none')+'; latest links '+netLastStatsCount+'; getStats errors '+netStatsErrors,
+    'Recent network events (UTC; local temporary link labels only):',...netEvents,
+    'Recent network / peer samples (up to 90, intervals approximate; n/a = not exposed):',...netTimeline].join('\n');
+}
+function clearNetworkHistory(){
+  netTimeline.length=0;netEvents.length=0;netSampleCount=0;netStatsErrors=0;netLastSample=null;netLastStatsCount=0;netClockStart=Date.now();
+  networkStateChanged('DIAGNOSTICS CLEARED');
+}
+function initNetworkDiagnostics(){
+  readNetworkDevice();networkStateChanged('NETWORK BASELINE');
+  for(const id of ['diagPhone','diagCarrier','diagRadio','diagSignal'])ui[id]?.addEventListener('change',()=>netNote('MANUAL DEVICE DETAILS UPDATED',netManual()));
+  ui.diagMarker?.addEventListener('click',()=>{networkStateChanged('USER MARK: PROBLEM NOW');netNote('MANUAL CONTEXT',netManual());logRadio('USER MARK: PROBLEM NOW','','See network timeline');});
+  ui.diagBaseline?.addEventListener('click',()=>{networkStateChanged('USER MARK: TEST START');netNote('MANUAL CONTEXT',netManual());logRadio('USER MARK: TEST START','','See network timeline');});
+  const c=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+  c?.addEventListener?.('change',()=>networkStateChanged('NETWORK INFORMATION CHANGE'));
+  window.addEventListener('offline',()=>networkStateChanged('BROWSER OFFLINE'));
+  window.addEventListener('online',()=>networkStateChanged('BROWSER ONLINE'));
+  document.addEventListener('visibilitychange',()=>networkStateChanged(document.hidden?'PAGE HIDDEN':'PAGE VISIBLE'));
+  window.addEventListener('pagehide',()=>networkStateChanged('PAGE HIDE'));
+}
+ui.downloadDiagnostics?.addEventListener('click',()=>{
+  try{
+    const report=diagnosticReport(),blob=new Blob([report],{type:'text/plain;charset=utf-8'});
+    const url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download='Relay-One-diagnostics-'+new Date().toISOString().replace(/[:.]/g,'-')+'.txt';
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    setMessage('Global report saved. Attach the text file to your email.');
+  }catch{window.prompt('Copy global diagnostics:',diagnosticReport());}
+});
+initNetworkDiagnostics();
+
 // Global export: every new feature must register its state and events here or in a section below.
 function diagnosticReport(){
   const connection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
@@ -897,7 +1063,7 @@ function diagnosticReport(){
       ', standby context='+(s.pttContext?.state||'none');
   });
   const data=usageMeter.snapshot();
-  return ['Relay One V6.15 global diagnostics',
+  return ['Relay One V6.16 global diagnostics',
     'Quick speech control: '+(ui.quickSpeech?.dataset.state||'unavailable')+'; model '+asrState,
     'Quick headset control: '+(ui.quickHeadset?.dataset.state||'unavailable'),
     'Quick microphone control: '+(ui.quickMic?.dataset.state||'unavailable'),
@@ -921,7 +1087,7 @@ function diagnosticReport(){
     'Browser online: '+(navigator.onLine===false?'no':'yes/unknown'),
     'Network effective type: '+kind+' (if available; not cellular signal)',
     'Active channels: '+sessions.size,
-    ...current,'','Recent events:',...diagnosticEvents,'','--- Speech to text ---',speechDiagnosticReport(),'','--- External headset PTT ---',hardwareDiagnosticReport()].join('\n');
+    ...current,'',networkDiagnosticReport(),'','Recent events:',...diagnosticEvents,'','--- Speech to text ---',speechDiagnosticReport(),'','--- External headset PTT ---',hardwareDiagnosticReport()].join('\n');
 }
 if(ui.copyDiagnostics)ui.copyDiagnostics.addEventListener('click',async()=>{
   const report=diagnosticReport();
@@ -930,7 +1096,7 @@ if(ui.copyDiagnostics)ui.copyDiagnostics.addEventListener('click',async()=>{
   }catch{window.prompt('Copy global diagnostics:',report);}
 });
 if(ui.clearDiagnostics)ui.clearDiagnostics.addEventListener('click',()=>{
-  diagnosticEvents.length=0;speechEvents.length=0;externalEvents.length=0;
+  diagnosticEvents.length=0;speechEvents.length=0;externalEvents.length=0;clearNetworkHistory();
   renderSpeechDiagnostics();renderExternalPTT();
   if(ui.diagnostics)ui.diagnostics.textContent='All event logs cleared. Session counters retained.';
 });
@@ -1491,7 +1657,7 @@ async function checkExternalAudio(){
   }
 }
 function hardwareDiagnosticReport(){
-  return ['Relay One V6.15 external PTT diagnostics',
+  return ['Relay One V6.16 external PTT diagnostics',
     'Recorded: '+new Date().toISOString(),'Browser: '+(navigator.userAgent||'not exposed'),
     'Page visible: '+!document.hidden,'Detection active: '+externalLearning,
     'Detected binding: '+externalLabel(externalBinding),
@@ -1669,6 +1835,8 @@ class ChannelSession{
     if(m.mediaTimer){clearTimeout(m.mediaTimer);m.mediaTimer=null;}
     const call=m.call;m.call=null;m.stream=null;m.lastIce=null;
     if(call){
+      const ctx=call.peerConnection&&netPeerContext.get(call.peerConnection);
+      if(ctx)netNote('LINK REMOVED',ctx.label+' '+ctx.channel+' voice');
       m.mediaFailures=(m.mediaFailures||0)+1;
       // Prevent an endless call/close/retry loop from saturating a mobile device.
       m.mediaRetryAt=Date.now()+Math.min(15000,1800*2**Math.min(m.mediaFailures,3));
@@ -1680,6 +1848,8 @@ class ChannelSession{
     const m=this.members.get(id);if(!m)return;
     this.members.delete(id);
     const dc=m.data;m.data=null;
+    const ctx=dc?.peerConnection&&netPeerContext.get(dc.peerConnection);
+    if(ctx)netNote('LINK REMOVED',ctx.label+' '+ctx.channel+' data');
     try{dc?.close();}catch{}
     this.dropMedia(m);
     if(this.floor===id && this.isHost)this.setFloor(null);
@@ -1817,9 +1987,11 @@ class ChannelSession{
       try{m.data.close()}catch{}
     }
     m.data=dc;m.pending=Date.now();logRadio('PEER DATA CONNECTING',this.room.title);
+    if(dc.peerConnection)watchNetworkPeer(dc.peerConnection,this,'data');
     dc.on('open',()=>{
       if(g!==this.generation||m.data!==dc)return;
       m.lastSeen=Date.now();logRadio('PEER DATA OPEN',this.room.title);
+      if(dc.peerConnection)watchNetworkPeer(dc.peerConnection,this,'data');
       this.send(dc.peer,{type:'hello',name:profile.name,color:profile.color});
       if(this.isHost)this.broadcastRoster();
       if(dc.peer===this.hostId())this.lastHost=Date.now();
@@ -1840,7 +2012,10 @@ class ChannelSession{
       this.dropMember(dc.peer);
       if(hostWasLost)this.scheduleRetry(1400);
     };
-    dc.on('close',closed);dc.on('error',closed);
+    dc.on('close',closed);dc.on('error',err=>{
+      netNote('DATA LINK ERROR',this.room.title+'; '+netEnum(err?.type,['network','disconnected','peer-unavailable','webrtc','socket-error','socket-closed','server-error','browser-incompatible','negotiation-failed','connection-closed']));
+      closed();
+    });
   }
   onData(id,msg){
     const m=this.members.get(id);if(!m)return;
@@ -1918,6 +2093,7 @@ class ChannelSession{
     m.call=call;m.mediaPending=Date.now();
     logRadio('VOICE CALL OPENING',this.room.title);
     const pc=call.peerConnection;
+    if(pc)watchNetworkPeer(pc,this,'voice');
     if(pc?.addEventListener)pc.addEventListener('iceconnectionstatechange',()=>{
       if(g!==this.generation || m.call!==call)return;
       const ice=pc.iceConnectionState;
@@ -1943,7 +2119,10 @@ class ChannelSession{
         setTimeout(()=>{if(g===this.generation && !this.stopped)this.startMedia(call.peer,g);},2600);
       updateRow(this.publicId);
     };
-    call.on('close',closed);call.on('error',closed);
+    call.on('close',closed);call.on('error',err=>{
+      netNote('VOICE LINK ERROR',this.room.title+'; '+netEnum(err?.type,['network','disconnected','peer-unavailable','webrtc','socket-error','socket-closed','server-error','browser-incompatible','negotiation-failed','connection-closed']));
+      closed();
+    });
     return true;
   }
   startMedia(id,g){

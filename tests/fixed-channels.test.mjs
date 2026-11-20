@@ -120,7 +120,7 @@ const environmentNames=[
   'URLSearchParams','Worker','setTimeout','clearTimeout','setInterval','clearInterval'
 ];
 const appFactory=new Function(...utilityNames,...environmentNames,source+
-  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,setTranscriptMode,loadLocalAsr,hardwareDiagnosticReport,diagnosticReport,setPTTOnlyMicrophone,getPTTOnlyMicrophone:()=>pttOnlyMicrophone,getAsrState:()=>asrState,getAsrStats:()=>asrStats,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
+  '\nreturn {joinChannel,leaveChannel,startPTT,releaseTalk,setMonitor,switchMode,modeAllows,maxActiveChannels,getMode:()=>radioMode,scanTick,setScan,browseChannel,setPttSide,getScreenId:displayChannelId,getFocusId:()=>focusedId,getScanEnabled:()=>scanEnabled,setTranscriptEnabled,setTranscriptMode,loadLocalAsr,hardwareDiagnosticReport,diagnosticReport,networkStatsLine,sampleDataUsage,watchNetworkPeer,setPTTOnlyMicrophone,getPTTOnlyMicrophone:()=>pttOnlyMicrophone,getAsrState:()=>asrState,getAsrStats:()=>asrStats,getTranscripts:()=>transcriptEntries,getTranscriptPopupOpen:()=>transcriptPopupOpen,speechDiagnosticReport,getSpeechStats:()=>speechStats,sessions,ui,channels,rows};');
 const utilsForTest={
   ...utils,...presets,WebRTCUsageMeter,formatDataBytes,
   checkChannelPin:(channel,pin)=>presets.checkChannelPin(channel,pin,webcrypto),
@@ -859,7 +859,7 @@ test('V6.14: beep test waits for suspended audio context without opening a micro
   assert.equal(a.toneStarts.length,1);
   assert.equal(a.mediaRequests.length,0);
   const report=a.diagnosticReport();
-  assert.match(report,/Relay One V6.15 global diagnostics/);
+  assert.match(report,/Relay One V6.16 global diagnostics/);
   assert.match(report,/TONE REQUEST/);
   assert.match(report,/TONE SCHEDULED/);
   assert.match(report,/Tone requests: 1; scheduled: 1/);
@@ -915,4 +915,35 @@ test('V6.15: quick microphone toggle uses existing mode setting',async()=>{
   await Promise.resolve();
   assert.equal(a.getPTTOnlyMicrophone(),false);
   assert.equal(a.ui.quickMic.dataset.state,'off');
+});
+
+test('V6.16: selected candidate types and loss diagnostics exclude addresses, IDs and URLs',()=>{
+  const a=browser('Network stats',[]),pc={iceConnectionState:'connected',connectionState:'connected',signalingState:'stable',iceGatheringState:'complete'};
+  const ctx=a.watchNetworkPeer(pc,{room:{title:'Channel 01'}},'voice');
+  const mk=(n)=>new Map([
+    ['private-pair',{id:'private-pair',type:'candidate-pair',state:'succeeded',nominated:true,localCandidateId:'private-local',remoteCandidateId:'private-remote',currentRoundTripTime:.12,bytesReceived:n*1000,bytesSent:n*2000}],
+    ['private-local',{id:'private-local',type:'local-candidate',candidateType:'srflx',protocol:'udp',address:'192.0.2.34',port:12345,url:'stun:SECRET'}],
+    ['private-remote',{id:'private-remote',type:'remote-candidate',candidateType:'host',protocol:'udp',address:'198.51.100.5'}],
+    ['private-rtp',{id:'private-rtp',type:'inbound-rtp',kind:'audio',packetsReceived:n*90,packetsLost:n*10,jitter:.02}],
+    ['private-tx',{id:'private-tx',type:'outbound-rtp',kind:'audio',packetsSent:n*100}]
+  ]);
+  a.networkStatsLine(ctx,{status:'fulfilled',value:mk(1)});
+  const line=a.networkStatsLine(ctx,{status:'fulfilled',value:mk(2)});
+  assert.match(line,/path=srflx\/host; protocol=udp/);
+  assert.match(line,/ICE RTT=120ms/);assert.match(line,/RX loss=10 \(10%\)/);
+  assert.match(line,/jitter=20ms/);
+  assert.doesNotMatch(line,/private-|192\.0\.2|198\.51\.100|SECRET|12345/);
+  const report=a.diagnosticReport();assert.match(report,/SELECTED ICE PATH/);
+  assert.doesNotMatch(report,/private-local|192\.0\.2|SECRET/);
+});
+test('V6.16: manual details, marker and network snapshots are in global export',async()=>{
+  const c=presets.CHANNEL_PRESETS[0],a=browser('LTE test',[]);
+  a.ui.diagPhone.value='Pixel 8 Pro';a.ui.diagCarrier.value='Verizon';a.ui.diagRadio.value='LTE';a.ui.diagSignal.value='-105';
+  a.ui.diagBaseline.listeners.click[0]();
+  await a.joinChannel(c);flush();await a.sampleDataUsage();
+  a.ui.diagMarker.listeners.click[0]();
+  const report=a.diagnosticReport();assert.match(report,/Model=Pixel 8 Pro; carrier=Verizon; user-reported network=LTE; user-reported signal=-105 dBm/);
+  assert.match(report,/USER MARK: TEST START/);assert.match(report,/USER MARK: PROBLEM NOW/);
+  assert.match(report,/Recent network \/ peer samples/);assert.match(report,/Samples [1-9]/);
+  a.leaveChannel(c.id);
 });

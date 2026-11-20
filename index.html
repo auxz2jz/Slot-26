@@ -7,15 +7,15 @@
 <meta name="description" content="Relay One handheld-style push-to-talk with Basic/Advanced channels, visual scan, and instant radio activity display.">
 <title>Relay One — Shared Radio Channels</title>
 <link rel="stylesheet" href="./styles.css?v=4.1.0">
-<link rel="stylesheet" href="./multi.css?v=6.15.0">
+<link rel="stylesheet" href="./multi.css?v=6.16.0">
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
-<script type="module" src="./multi-radio.js?v=6.15.0"></script>
+<script type="module" src="./multi-radio.js?v=6.16.0"></script>
 </head>
 <body>
 <main class="app multi-app">
   <header class="masthead">
     <div class="brand-mark" aria-hidden="true">◉</div>
-    <div><p class="eyebrow">RELAY ONE / RADIO V6.15</p><h1>Field radio</h1></div>
+    <div><p class="eyebrow">RELAY ONE / RADIO V6.16</p><h1>Field radio</h1></div>
     <span id="channelModeBadge" class="version">2 channels</span>
   </header>
 
@@ -242,9 +242,27 @@
 
   <details class="card radio-diag" id="diagnosticsPanel">
     <summary><strong>Global diagnostics</strong> <span class="secondary-text">All radio features</span></summary>
-    <p class="small muted">One report includes connection, channel state, microphone, PTT, headset, sound cues, scan, speech-to-text, and data usage. Logs are kept in memory only and exclude PINs and conversation audio. Android's actual 5G signal strength is not available to a webpage.</p>
+    <p class="small muted">One report includes every radio feature and a detailed cellular/WebRTC troubleshooting timeline. Logs stay in memory until you export them. No IP addresses, PINs, peer IDs, phone numbers, audio or transcripts are intentionally recorded. Chrome estimates network quality; it cannot reliably identify LTE/5G, carrier, cell tower or true radio signal strength.</p>
+    <div class="cell-diagnostics">
+      <strong>Phone and cellular test details</strong>
+      <label for="diagPhone">Phone model (optional; browser may also report it)</label>
+      <input id="diagPhone" maxlength="60" placeholder="e.g. Pixel 8 Pro">
+      <label for="diagCarrier">Carrier (optional)</label>
+      <input id="diagCarrier" maxlength="40" placeholder="e.g. Verizon">
+      <label for="diagRadio">Actual network shown by phone</label>
+      <select id="diagRadio"><option value="unknown">Unknown / not entered</option><option value="LTE">LTE / 4G</option><option value="5G">5G</option><option value="5G UW">5G UW / UC / plus</option><option value="Wi-Fi">Wi-Fi</option><option value="other">Other</option></select>
+      <label for="diagSignal">Cellular signal in dBm (optional, Android SIM status)</label>
+      <input id="diagSignal" type="number" min="-160" max="-20" step="1" placeholder="e.g. -105">
+      <p class="small muted">Do not enter IMEI, phone numbers, account details or exact locations. Enter information on each phone before testing.</p>
+      <div class="multi-toolbar">
+        <button id="diagMarker" type="button" class="secondary">Mark problem NOW</button>
+        <button id="diagBaseline" type="button" class="secondary">Mark test start</button>
+      </div>
+      <p id="diagNetStatus" class="small" role="status">Waiting for network information…</p>
+    </div>
     <div class="multi-toolbar">
       <button class="secondary" id="copyDiagnostics" type="button">Copy global diagnostics</button>
+      <button class="secondary" id="downloadDiagnostics" type="button">Save report (.txt) for email</button>
       <button class="secondary" id="clearDiagnostics" type="button">Clear all event logs</button>
     </div>
     <pre id="diagnosticLog" class="diag-log" aria-live="polite">Radio diagnostic events will appear here.</pre>
@@ -253,6 +271,7 @@
   <section class="card" aria-label="Previous builds">
     <h2>Previous builds</h2>
     <div class="backup-links">
+      <a href="./legacy-v6-15.html">Previous version (V6.15)</a>
       <a href="./legacy-v6-12.html">Previous working version (V6.12)</a>
       <a href="./legacy-v6-11.html">Earlier version (V6.11)</a>
       <a href="./legacy-v6-7.html">Original always-ready version (V6.7)</a>

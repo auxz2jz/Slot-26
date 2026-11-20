@@ -63,15 +63,17 @@ export class WebRTCUsageMeter{
     this.saved.rx+=change.rx;this.saved.tx+=change.tx;
     return change;
   }
-  async sample(peerConnections){
+  async sample(peerConnections,observe=null){
     if(this.sampling)return null;
     this.sampling=true;
     const changed={rx:0,tx:0};
     try{
       const peers=[...new Set(peerConnections||[])].filter(pc=>pc && typeof pc.getStats==='function');
       // Avoid blocking the UI if one remote peer is slow to resolve a report.
-      const samples=await Promise.allSettled(peers.map(pc=>pc.getStats()));
+      const samples=await Promise.allSettled(peers.map(pc=>Promise.resolve().then(()=>pc.getStats())));
       for(let i=0;i<peers.length;i++){
+        // Diagnostics use the same getStats result; observer never changes metering.
+        try{observe?.(peers[i],samples[i]);}catch{}
         if(samples[i].status!=='fulfilled')continue;
         const delta=this.record(peers[i],samples[i].value);
         changed.rx+=delta.rx;changed.tx+=delta.tx;

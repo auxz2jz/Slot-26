@@ -1,6 +1,11 @@
-# Relay One — Finished Controls and Development Tools (V6.15)
+# Relay One — Detailed cellular and WebRTC diagnostics (V6.16)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
+
+## V6.16 — Cellular and multi-peer investigation
+
+Global diagnostics now includes UA client hints (model/OS/browser where exposed), operator-entered phone/carrier/radio/signal, network-estimate changes, UTC markers, signaling/ICE/PC/gathering state, selected candidate types and protocol, RTT, inbound interval loss, jitter, remote RTT/loss when available, candidate-pair throughput and data-channel states. Peer links receive temporary per-page labels only. The existing usage-meter four-second getStats cycle is reused; no traffic probes or transport changes. Up to 90 snapshots and 180 network events retained in RAM. No raw stats report, address, port, SDP, URLs, peer IDs or audio exported by the new diagnostics. All existing diagnostic copy buttons return the full report; Save report (.txt) is available for email attachment. Chrome cannot reliably report actual LTE/5G, carrier or signal strength; enter the optional details manually. Use test-start and problem markers on each device. Prior V6.15 backup: https://auxz2jz.github.io/Slot-26/legacy-v6-15.html.
+
 
 This is a browser-based push-to-talk prototype for a shared set of **ten fixed channels**. Every user sees the exact same channels. No individual invitation, channel creation, or channel distribution is required.
 
