@@ -168,7 +168,7 @@ async function sampleDataUsage(){
       const ctx=contexts.get(pc);
       if(ctx)results.push(networkStatsLine(ctx,result));
     });
-    if(sampled!==null&&sessions.size)recordNetworkSample(capturedAt,results);
+    if(sampled!==null)recordNetworkSample(capturedAt,results);
   }catch(err){logRadio('USAGE SAMPLE ERROR','',err?.name||'getStats failed');}
   renderDataUsage();
 }
@@ -263,7 +263,7 @@ function speechDiagnosticReport(){
     s.room.title+': '+(s.track?.readyState||'no track')+', enabled='+Boolean(s.track?.enabled)+
     ', transmitting='+Boolean(s.transmitting)+', floor='+Boolean(s.floor===s.myId));
   return [
-    'Relay One V6.17 speech diagnostics',
+    'Relay One V6.18 speech diagnostics',
     'Transcription engine: '+transcriptMode,
     'On-device model state: '+asrState,
     'On-device recording active: '+Boolean(asrActive),
@@ -904,7 +904,18 @@ function logRadio(event,channel='',detail=''){
 const NET_ROWS_LIMIT=90,NET_EVENT_LIMIT=180;
 const netTimeline=[],netEvents=[],netPeerContext=new WeakMap();
 const rxEvents=[],rxLabels=new WeakMap(),rxHB=new WeakMap(),probeEvents=[];
-let rxCounter=0,rxCount=0,probeEnabled=false,probeBusy=false,probeLast='not tested',probeCount=0,probeEpoch=0,probeController=null;
+let rxCounter=0,rxCount=0,probeEnabled=true,probeBusy=false,probeLast='waiting for first automatic check',probeCount=0,probeEpoch=0,probeController=null;
+let networkReadyAt=0,lastAutoProbe=0,netModel='not exposed',checkpointStatus='waiting';
+const DIAG_CHECKPOINT_KEY='relay-one.diag-checkpoint.v6.18';
+let previousCheckpoint=storeGet(DIAG_CHECKPOINT_KEY,null);
+if(!previousCheckpoint||typeof previousCheckpoint.report!=='string'||previousCheckpoint.report.length>600000)previousCheckpoint=null;
+function networkCanRecover(){return navigator.onLine!==false&&Date.now()>=networkReadyAt;}
+function autoProbe(){if(document.hidden||probeBusy||Date.now()-lastAutoProbe<2000)return;lastAutoProbe=Date.now();void checkInternetReachability();}
+function checkpointDiagnostics(){
+  try{const report=diagnosticReport(false);localStorage.setItem(DIAG_CHECKPOINT_KEY,JSON.stringify({at:new Date().toISOString(),report:report.slice(0,600000)}));checkpointStatus='saved locally';}
+  catch{checkpointStatus='local storage unavailable / quota';}
+}
+
 function radioLabel(m){
   if(!m)return 'local / unknown';
   if(!rxLabels.has(m))rxLabels.set(m,'Radio '+(++rxCounter));
@@ -947,7 +958,7 @@ function radioRxSnapshot(){
 }
 function probeNote(line){
   probeLast=line;probeEvents.push(new Date().toISOString()+' | '+line);if(probeEvents.length>90)probeEvents.shift();
-  if(ui.diagProbeStatus)ui.diagProbeStatus.textContent=(probeEnabled?'Periodic checks on. ':'Periodic checks off. ')+line;
+  if(ui.diagProbeStatus)ui.diagProbeStatus.textContent='Automatic checks active. '+line;
 }
 async function checkInternetReachability(){
   if(probeBusy)return;
@@ -961,17 +972,13 @@ async function checkInternetReachability(){
   }catch(e){if(epoch===probeEpoch)probeNote('HTTPS same-site '+(timedOut?'timeout':'failed')+'; '+Math.max(0,Date.now()-started)+'ms; '+connectionSnapshot());}
   finally{clearTimeout(timer);if(probeController===controller){probeController=null;probeBusy=false;}}
 }
-function setReachabilityEnabled(enabled){
-  probeEnabled=Boolean(enabled);if(ui.diagProbeEnabled)ui.diagProbeEnabled.checked=probeEnabled;
-  probeNote(probeEnabled?'Periodic HTTPS reachability enabled':'Periodic HTTPS reachability disabled');
-  if(probeEnabled&&!document.hidden)void checkInternetReachability();
-}
+
 function receiveDiagnosticReport(){
   return ['--- Incoming radio and reachability diagnostics ---',
     'Incoming radio event count: '+rxCount+'; temporary labels local to this page only',
     'Floor updates are authorization, NOT proof of audible speech. Packet activity is in WebRTC samples.',
     'Latest remote radio states:',...radioRxSnapshot(),'Recent incoming/control/link events:',...rxEvents,
-    'Periodic HTTPS reachability: '+probeEnabled+'; checks started: '+probeCount+'; latest: '+probeLast,
+    'Automatic HTTPS reachability: '+probeEnabled+'; checks started: '+probeCount+'; latest: '+probeLast,
     'Reachability target: same Relay One website only; failure is not definitive proof of cellular outage. Browser online alone does not prove internet access.',
     'Recent reachability checks:',...probeEvents].join('\n');
 }
@@ -999,7 +1006,7 @@ function netNote(kind,details=''){
 function networkStateChanged(reason){
   const now=connectionSnapshot();
   netNote(reason,now);netLastState=now;
-  if(ui.diagNetStatus)ui.diagNetStatus.textContent=now+'; '+netSampleCount+' snapshots';
+  if(ui.diagNetStatus)ui.diagNetStatus.textContent='Automatic capture active; model='+netModel+'; '+now+'; '+netSampleCount+' snapshots';
 }
 function readNetworkDevice(){
   const ua=navigator.userAgentData;
@@ -1011,7 +1018,10 @@ function readNetworkDevice(){
       .then(v=>{
         netDeviceInfo='Model '+(safe(v.model)||'not exposed')+'; OS '+safe(ua.platform)+' '+safe(v.platformVersion)+
           '; architecture '+safe(v.architecture)+'; bitness '+safe(v.bitness)+'; browser '+(Array.isArray(v.fullVersionList)?v.fullVersionList.slice(0,6).map(b=>safe(b.brand)+' '+safe(b.version)).join(', '):'n/a');
+        netModel=safe(v.model)||'not exposed';
+        if(ui.diagPhone&&!ui.diagPhone.value&&netModel!=='not exposed')ui.diagPhone.placeholder='Detected: '+netModel;
         netNote('DEVICE HINTS UPDATED');
+        if(ui.diagNetStatus)ui.diagNetStatus.textContent=netDeviceInfo+'; '+connectionSnapshot();
       }).catch(()=>netNote('DEVICE HINTS UNAVAILABLE','Browser withheld high-entropy hints'));
   }
 }
@@ -1063,6 +1073,8 @@ function networkStatsLine(ctx,result){
   const lossPct=rx!==null&&loss!==null&&rx+loss>0?100*loss/(rx+loss):null;
   const elapsed=Math.max(.001,(Date.now()-ctx.lastAt)/1000),rxB=delta('rxBytes'),txB=delta('txBytes');
   const rxK=rxB===null?null:rxB*8/1000/elapsed,txK=txB===null?null:txB*8/1000/elapsed;
+  if(ctx.kind==='voice'&&rx===0&&ctx.lastRx>0)netNote('INCOMING AUDIO PACKETS STOPPED',prefix+'; inspect floor, ICE and heartbeat to distinguish idle from outage');
+  if(rx!==null)ctx.lastRx=rx;
   ctx.prev=current;ctx.lastAt=Date.now();
   const dc=values.filter(v=>v.type==='data-channel');
   const codec=values.find(v=>v.type==='codec'&&v.mimeType==='audio/opus')?'opus':values.some(v=>v.type==='codec')?'other':'n/a';
@@ -1078,7 +1090,7 @@ function recordNetworkSample(at,lines){
   const active=[...sessions.values()].map(s=>s.room.title+': '+(s.isHost?'host':'guest')+'; signaling '+(s.peer?.disconnected?'disconnected':s.peer?.open?'open':'waiting')+'; peers '+s.members.size+'; data '+[...s.members.values()].filter(m=>m.data?.open).length+'; voice '+[...s.members.values()].filter(m=>m.stream).length+'; TX '+Boolean(s.transmitting)).join(' / ');
   netTimeline.push(netLastSample+' | '+connectionSnapshot()+' | '+active+'\n'+(lines.join('\n')||'No getStats-capable active links yet')+'\n'+radioRxSnapshot().join('\n'));
   if(netTimeline.length>NET_ROWS_LIMIT)netTimeline.shift();
-  if(ui.diagNetStatus)ui.diagNetStatus.textContent=connectionSnapshot()+'; '+netSampleCount+' snapshots, '+lines.length+' link reports in latest sample';
+  if(ui.diagNetStatus)ui.diagNetStatus.textContent='Automatic capture active; model='+netModel+'; '+connectionSnapshot()+'; '+netSampleCount+' snapshots, '+lines.length+' link reports in latest sample';
 }
 function networkDiagnosticReport(){
   return ['--- Device and cellular / WebRTC diagnostics ---',
@@ -1098,20 +1110,23 @@ function clearNetworkHistory(){
   netTimeline.length=0;netEvents.length=0;netSampleCount=0;netStatsErrors=0;netLastSample=null;netLastStatsCount=0;netClockStart=Date.now();
   rxEvents.length=0;rxCount=0;probeEvents.length=0;probeCount=0;probeLast='not tested';probeEpoch++;
   probeController?.abort();
+  previousCheckpoint=null;try{localStorage.removeItem(DIAG_CHECKPOINT_KEY);}catch{}
   networkStateChanged('DIAGNOSTICS CLEARED');
 }
 function initNetworkDiagnostics(){
   readNetworkDevice();networkStateChanged('NETWORK BASELINE');
-  ui.diagProbeEnabled?.addEventListener('change',()=>setReachabilityEnabled(ui.diagProbeEnabled.checked));
   ui.diagProbeNow?.addEventListener('click',()=>{void checkInternetReachability();});
-  setInterval(()=>{if(probeEnabled&&!document.hidden)void checkInternetReachability();},5000);
+  setTimeout(autoProbe,0);setInterval(autoProbe,5000);
+  setInterval(checkpointDiagnostics,15000);
+  window.addEventListener('pagehide',checkpointDiagnostics);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)checkpointDiagnostics();else autoProbe();});
   for(const id of ['diagPhone','diagCarrier','diagRadio','diagSignal'])ui[id]?.addEventListener('change',()=>netNote('MANUAL DEVICE DETAILS UPDATED',netManual()));
   ui.diagMarker?.addEventListener('click',()=>{networkStateChanged('USER MARK: PROBLEM NOW');netNote('MANUAL CONTEXT',netManual());logRadio('USER MARK: PROBLEM NOW','','See network timeline');});
   ui.diagBaseline?.addEventListener('click',()=>{networkStateChanged('USER MARK: TEST START');netNote('MANUAL CONTEXT',netManual());logRadio('USER MARK: TEST START','','See network timeline');});
   const c=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
   c?.addEventListener?.('change',()=>networkStateChanged('NETWORK INFORMATION CHANGE'));
-  window.addEventListener('offline',()=>networkStateChanged('BROWSER OFFLINE'));
-  window.addEventListener('online',()=>networkStateChanged('BROWSER ONLINE'));
+  window.addEventListener('offline',()=>{networkReadyAt=Infinity;networkStateChanged('BROWSER OFFLINE');autoProbe();checkpointDiagnostics();});
+  window.addEventListener('online',()=>{networkReadyAt=Date.now()+3000;networkStateChanged('BROWSER ONLINE');netNote('RECOVERY HOLD','Waiting 3000ms for network stability');autoProbe();});
   document.addEventListener('visibilitychange',()=>networkStateChanged(document.hidden?'PAGE HIDDEN':'PAGE VISIBLE'));
   window.addEventListener('pagehide',()=>networkStateChanged('PAGE HIDE'));
 }
@@ -1127,7 +1142,7 @@ ui.downloadDiagnostics?.addEventListener('click',()=>{
 initNetworkDiagnostics();
 
 // Global export: every new feature must register its state and events here or in a section below.
-function diagnosticReport(){
+function diagnosticReport(includePrevious=true){
   const connection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
   const kind=connection?.effectiveType||'unavailable';
   const current=Array.from(sessions.values()).map(s=>{
@@ -1142,7 +1157,9 @@ function diagnosticReport(){
       ', standby context='+(s.pttContext?.state||'none');
   });
   const data=usageMeter.snapshot();
-  return ['Relay One V6.17 global diagnostics',
+  return ['Relay One V6.18 global diagnostics',
+    'Automatic capture: active from page load; no manual test start/stop',
+    'Local diagnostic checkpoint: '+checkpointStatus+'; last previous page snapshot '+(previousCheckpoint?.at||'none'),
     'Quick speech control: '+(ui.quickSpeech?.dataset.state||'unavailable')+'; model '+asrState,
     'Quick headset control: '+(ui.quickHeadset?.dataset.state||'unavailable'),
     'Quick microphone control: '+(ui.quickMic?.dataset.state||'unavailable'),
@@ -1166,7 +1183,7 @@ function diagnosticReport(){
     'Browser online: '+(navigator.onLine===false?'no':'yes/unknown'),
     'Network effective type: '+kind+' (if available; not cellular signal)',
     'Active channels: '+sessions.size,
-    ...current,'',networkDiagnosticReport(),'',receiveDiagnosticReport(),'','Recent events:',...diagnosticEvents,'','--- Speech to text ---',speechDiagnosticReport(),'','--- External headset PTT ---',hardwareDiagnosticReport()].join('\n');
+    ...current,'',networkDiagnosticReport(),'',receiveDiagnosticReport(),'','--- Recovery diagnostics ---',...Array.from(sessions.values()).map(s=>s.room.title+'; signal attempts='+s.signalAttempts+'; suppressed signaling events='+s.signalSuppressed+'; session retry attempts='+s.retryAttempts+'; peer cooldowns='+s.dataFailures.size+'; waiting for stable network='+!networkCanRecover()),'','Recent events:',...diagnosticEvents,'','--- Speech to text ---',speechDiagnosticReport(),'','--- External headset PTT ---',hardwareDiagnosticReport(),...(includePrevious&&previousCheckpoint?['','--- Previous page diagnostic checkpoint (local; not recursive) ---',previousCheckpoint.report]:[])].join('\n');
 }
 if(ui.copyDiagnostics)ui.copyDiagnostics.addEventListener('click',async()=>{
   const report=diagnosticReport();
@@ -1736,7 +1753,7 @@ async function checkExternalAudio(){
   }
 }
 function hardwareDiagnosticReport(){
-  return ['Relay One V6.17 external PTT diagnostics',
+  return ['Relay One V6.18 external PTT diagnostics',
     'Recorded: '+new Date().toISOString(),'Browser: '+(navigator.userAgent||'not exposed'),
     'Page visible: '+!document.hidden,'Detection active: '+externalLearning,
     'Detected binding: '+externalLabel(externalBinding),
@@ -1820,6 +1837,7 @@ class ChannelSession{
     this.floor=null;this.floorAt=0;this.wantTalk=false;this.transmitting=false;
     this.generation=0;this.stopped=false;this.status='Connecting';this.note='Connecting to signaling…';
     this.lastHost=0;this.heartbeat=null;this.retry=null;this.toneTimer=null;this.signalingRetry=null;
+    this.signalAttempts=0;this.signalSuppressed=0;this.lastSignalEvent=0;this.nextSignalAttempt=0;this.signalBackoff=0;this.retryAttempts=0;this.retryBackoff=0;this.dataFailures=new Map();this.meshHoldUntil=0;this.signalStableAt=0;
   }
   hostId(){return leaderId(this.id);}
   validMember(id){return validMemberId(this.id,id);}
@@ -1966,14 +1984,15 @@ class ChannelSession{
   }
   beginHost(){
     if(this.stopped)return;
-    this.generation++;this.closePeer();
+    if(!networkCanRecover()){this.scheduleRetry(4000,'network unavailable');return;}
+    this.lastHost=Date.now();this.generation++;this.closePeer();this.dataFailures.clear();
     const generation=this.generation;
     const id=this.hostId();this.myId=id;this.isHost=false;
     const peer=new window.Peer(id,{debug:0,config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]}});
     this.peer=peer;this.note='Checking channel membership…';logRadio('HOST ATTEMPT',this.room.title);
     peer.on('open',()=>{
       if(!this.current(peer,generation))return;
-      this.isHost=true;this.roster=new Set([this.myId]);this.status='Online';logRadio('SIGNALING READY',this.room.title,'Coordinator');
+      this.isHost=true;this.signalStableAt=Date.now();this.roster=new Set([this.myId]);this.status='Online';logRadio('SIGNALING READY',this.room.title,'Coordinator');
       this.note='Channel ready. Waiting for people to join.';
       updateRow(this.publicId);updateQuick();
     });
@@ -1988,7 +2007,7 @@ class ChannelSession{
     this.peer=peer;this.note='Finding channel coordinator…';logRadio('GUEST CONNECT',this.room.title);
     peer.on('open',()=>{
       if(!this.current(peer,generation))return;
-      this.status='Connecting';logRadio('SIGNALING READY',this.room.title,'Participant');this.tryHost();
+      this.signalStableAt=Date.now();this.status='Connecting';logRadio('SIGNALING READY',this.room.title,'Participant');this.tryHost();
     });
     this.bindPeer(peer,generation,false);
   }
@@ -2016,44 +2035,67 @@ class ChannelSession{
     });
     p.on('disconnected',()=>{
       if(!this.current(p,g))return;
-      this.note='Signaling interrupted; keeping active audio while reconnecting.';logRadio('SIGNALING DISCONNECTED',this.room.title,'Keeping established voice where possible');
-      this.lastSignalReconnect=Date.now();
-      try{p.reconnect();}catch{}
-      if(this.signalingRetry)clearTimeout(this.signalingRetry);
-      this.signalingRetry=setTimeout(()=>{
-        if(this.current(p,g)&&p.disconnected&&!this.hasPeers())this.scheduleRetry(1800);
-      },20000);
+      this.note='Signaling interrupted; keeping active audio while reconnecting.';
+      this.signalStableAt=0;this.signalEvent('SIGNALING DISCONNECTED','Keeping established voice; deferred recovery');
       updateRow(this.publicId);
     });
     p.on('error',err=>{
       if(!this.current(p,g))return;
       if(asHost && err?.type==='unavailable-id' && !this.isHost){this.beginGuest();return;}
       if(err?.type==='peer-unavailable'){if(!this.isHost && !this.members.get(this.hostId())?.data?.open)this.note='Waiting for coordinator…';return;}
-      if(err?.type==='unavailable-id'){this.scheduleRetry(2600);return;}
-      this.note='Network issue ('+(err?.type||'unknown')+'). Reconnecting if necessary.';logRadio('SIGNALING ERROR',this.room.title,err?.type||'unknown');
-      if(!this.hasPeers())this.scheduleRetry(4000);
+      if(err?.type==='unavailable-id'){this.scheduleRetry(4000,'identifier unavailable');return;}
+      const kind=netEnum(err?.type,['network','disconnected','peer-unavailable','webrtc','socket-error','socket-closed','server-error','browser-incompatible','negotiation-failed','connection-closed']);
+      this.signalStableAt=0;this.note='Network issue. Reconnecting if necessary.';this.signalEvent('SIGNALING ERROR',kind);
+      if(!p.disconnected&&!p.open&&!this.hasPeers())this.scheduleRetry(4000,'signaling error');
       updateRow(this.publicId);
     });
-    p.on('close',()=>{if(this.current(p,g))this.scheduleRetry(2100);});
+    p.on('close',()=>{if(this.current(p,g))this.scheduleRetry(4000,'signaling closed');});
   }
   hasPeers(){return [...this.members.values()].some(m=>m.data?.open);}
-  scheduleRetry(delay=2400){
+  signalEvent(kind,details){
+    const now=Date.now();if(now-this.lastSignalEvent<1000){this.signalSuppressed++;return;}
+    this.lastSignalEvent=now;logRadio(kind,this.room.title,details+'; suppressed total='+this.signalSuppressed);
+  }
+  scheduleRetry(delay=4000,reason='coordinator unavailable'){
     if(this.stopped||this.retry)return;
-    this.retry=setTimeout(()=>{this.retry=null;if(!this.stopped)this.beginHost();},delay);
-    this.note='Reconnecting…';logRadio('RECONNECT SCHEDULED',this.room.title);updateRow(this.publicId);
+    const wait=Math.max(delay,Math.min(60000,4000*2**Math.min(this.retryBackoff,4)));
+    const g=this.generation;
+    this.retry=setTimeout(()=>{
+      this.retry=null;if(this.stopped||g!==this.generation)return;
+      if(!networkCanRecover()){this.signalEvent('RECOVERY DEFERRED','Browser offline or stabilizing');return;}
+      if(this.hasPeers()&&(this.isHost||this.members.get(this.hostId())?.data?.open)){
+        logRadio('RECOVERY CANCELLED',this.room.title,'Established coordinator connection retained');return;
+      }
+      this.retryAttempts++;this.retryBackoff++;logRadio('SESSION RECONNECT ATTEMPT',this.room.title,reason+'; attempt='+this.retryAttempts);this.beginHost();
+    },wait);
+    this.note='Reconnecting when network is stable…';logRadio('RECONNECT SCHEDULED',this.room.title,reason+'; delay='+wait+'ms');updateRow(this.publicId);
   }
   reconnectSignaling(){
-    if(this.stopped)return;
-    // Avoid reconnect storms during mobile LTE/Wi-Fi handoffs.
-    if(this.peer?.disconnected && Date.now()-(this.lastSignalReconnect||0)>9000){
-      this.lastSignalReconnect=Date.now();
-      try{this.peer.reconnect();}catch{this.scheduleRetry();}
+    if(this.stopped||!networkCanRecover())return;
+    const now=Date.now(),p=this.peer;
+    if(p?.open&&!p.disconnected&&this.signalStableAt&&now-this.signalStableAt>20000){
+      this.signalBackoff=0;if(this.isHost||this.members.get(this.hostId())?.data?.open)this.retryBackoff=0;
     }
-    if(!this.peer || this.peer.destroyed)this.scheduleRetry(500);
+    if(p?.disconnected&&!p.destroyed&&now>=this.nextSignalAttempt){
+      const wait=Math.min(60000,5000*2**Math.min(this.signalBackoff,4));
+      this.nextSignalAttempt=now+wait;this.signalBackoff++;this.signalAttempts++;
+      logRadio('SIGNALING RECONNECT ATTEMPT',this.room.title,'attempt='+this.signalAttempts+'; next delay='+wait+'ms; active peer='+this.hasPeers());
+      try{p.reconnect();}catch{this.signalEvent('SIGNALING RECONNECT FAILED','Exception; cooling down');}
+      if(this.signalBackoff>=3&&!this.hasPeers()&&p.disconnected)this.scheduleRetry(5000,'signaling recovery exhausted');
+    }
+    if(!p||p.destroyed)this.scheduleRetry(4000,'signaling peer unavailable');
+  }
+  noteDataFailure(id,reason){
+    const old=this.dataFailures.get(id),failures=(old?.failures||0)+1,delay=Math.min(60000,4000*2**Math.min(failures-1,4));
+    if(this.dataFailures.size>=64&&!this.dataFailures.has(id))this.dataFailures.delete(this.dataFailures.keys().next().value);
+    this.dataFailures.set(id,{failures,until:Date.now()+delay});
+    this.meshHoldUntil=Math.max(this.meshHoldUntil,Date.now()+2000);
+    logRadio('PEER COOLDOWN',this.room.title,reason+'; attempt='+failures+'; delay='+delay+'ms');
   }
   tryHost(){
-    if(this.stopped || this.isHost || !this.peer?.open)return;
+    if(this.stopped || this.isHost || !this.peer?.open || !networkCanRecover())return;
     const id=this.hostId(),m=this.members.get(id);
+    if(Date.now()<(this.dataFailures.get(id)?.until||0))return;
     if(m?.data?.open)return;
     if(m?.data && Date.now()-m.pending<PENDING_AFTER)return;
     if(m)this.dropMember(id,true);
@@ -2072,7 +2114,7 @@ class ChannelSession{
     if(dc.peerConnection)watchNetworkPeer(dc.peerConnection,this,'data',m);
     dc.on('open',()=>{
       if(g!==this.generation||m.data!==dc)return;
-      m.lastSeen=Date.now();logRadio('PEER DATA OPEN',this.room.title);
+      m.lastSeen=Date.now();this.dataFailures.delete(dc.peer);logRadio('PEER DATA OPEN',this.room.title);
       rxNote(this,m,'DATA OPEN');
       if(dc.peerConnection)watchNetworkPeer(dc.peerConnection,this,'data',m);
       this.send(dc.peer,{type:'hello',name:profile.name,color:profile.color});
@@ -2093,8 +2135,8 @@ class ChannelSession{
       const hostWasLost=!this.isHost && dc.peer===this.hostId();
       logRadio('PEER DATA CLOSED',this.room.title);
       rxNote(this,m,'DATA CLOSED','host lost='+hostWasLost+'; last control age='+Math.max(0,Date.now()-m.lastSeen)+'ms; '+connectionSnapshot());
-      this.dropMember(dc.peer);
-      if(hostWasLost)this.scheduleRetry(1400);
+      this.noteDataFailure(dc.peer,'data closed');this.dropMember(dc.peer);
+      if(hostWasLost)this.scheduleRetry(4000,'coordinator link closed');
     };
     dc.on('close',closed);dc.on('error',err=>{
       netNote('DATA LINK ERROR',this.room.title+'; '+netEnum(err?.type,['network','disconnected','peer-unavailable','webrtc','socket-error','socket-closed','server-error','browser-incompatible','negotiation-failed','connection-closed']));
@@ -2162,11 +2204,11 @@ class ChannelSession{
     this.ensureMesh();
   }
   ensureMesh(){
-    if(this.stopped || this.isHost || !this.peer?.open)return;
+    if(this.stopped || this.isHost || !this.peer?.open || !networkCanRecover() || Date.now()<this.meshHoldUntil)return;
     for(const id of this.roster){
       if(id===this.myId || id===this.hostId() || !validGuestId(this.id,id))continue;
       const m=this.member(id);
-      if(this.myId<id && !m.data)
+      if(this.myId<id && !m.data && Date.now()>=(this.dataFailures.get(id)?.until||0))
         try{this.attachData(this.peer.connect(id,{reliable:true,serialization:'json'}),this.generation);}catch{}
       if(this.myId<id && m.data?.open && !m.call)this.startMedia(id,this.generation);
     }
@@ -2218,7 +2260,7 @@ class ChannelSession{
   }
   startMedia(id,g){
     const m=this.members.get(id);
-    if(this.stopped||g!==this.generation || !m?.data?.open || m.call || m.mediaTimer ||
+    if(this.stopped||!networkCanRecover()||g!==this.generation || !m?.data?.open || m.call || m.mediaTimer ||
       this.myId>=id || !this.peer?.open || Date.now()<(m.mediaRetryAt||0))return;
     // Schedule one media negotiation at a time across ALL channels on this phone.
     // Data channels must settle before accepting a WebRTC media call.
@@ -2226,7 +2268,7 @@ class ChannelSession{
     nextMediaNegotiation=scheduled+MEDIA_NEGOTIATION_GAP;
     m.mediaTimer=setTimeout(()=>{
       m.mediaTimer=null;
-      if(this.stopped||g!==this.generation || this.members.get(id)!==m ||
+      if(this.stopped||!networkCanRecover()||g!==this.generation || this.members.get(id)!==m ||
         !m.data?.open || m.call || this.myId>=id || !this.peer?.open)return;
       try{
         const call=this.peer.call(id,this.stream);
@@ -2241,13 +2283,14 @@ class ChannelSession{
   }
   tick(){
     if(this.stopped)return;
+    if(!networkCanRecover()){this.signalEvent('RECOVERY DEFERRED','Offline or network stabilizing');return;}
     const now=Date.now();
     for(const [id,m] of [...this.members]){
       if(m.data?.open){
-        if(now-m.lastSeen>STALE_AFTER){rxNote(this,m,'HEARTBEAT STALE','last control age='+Math.max(0,now-m.lastSeen)+'ms');this.dropMember(id);continue;}
+        if(now-m.lastSeen>STALE_AFTER){rxNote(this,m,'HEARTBEAT STALE','last control age='+Math.max(0,now-m.lastSeen)+'ms');this.noteDataFailure(id,'heartbeat stale');this.dropMember(id);continue;}
         const hb=heartbeat(m);if(hb.sent===null)hb.sent=now;
         this.send(id,{type:'ping'});
-      }else if(m.data && now-m.pending>PENDING_AFTER){rxNote(this,m,'DATA OPEN TIMEOUT');this.dropMember(id,true);}
+      }else if(m.data && now-m.pending>PENDING_AFTER){rxNote(this,m,'DATA OPEN TIMEOUT');this.noteDataFailure(id,'data open timeout');this.dropMember(id,true);}
       const ice=m.call?.peerConnection?.iceConnectionState;
       if(ice && ice!==m.lastIce){m.lastIce=ice;logRadio('ICE STATE',this.room.title,ice);}
       if(ice==='failed' || m.call && !m.stream && now-m.mediaPending>17000){
@@ -2265,7 +2308,7 @@ class ChannelSession{
       const coordinator=this.members.get(this.hostId());
       if(!coordinator?.data?.open){
         this.tryHost();
-        if(now-(this.lastHost||0)>30000)this.scheduleRetry(1600);
+        if(now-(this.lastHost||0)>30000)this.scheduleRetry(4000,'coordinator heartbeat lost');
       }else this.ensureMesh();
     }
     this.reconnectSignaling();
@@ -2567,3 +2610,4 @@ setPttSide(pttSide);
 setInterval(()=>{if(scanEnabled)scanTick();},350);
 function updateAll(){for(const c of channels)updateRow(c.id);updateQuick();}
 drawColors();drawRows();
+logRadio('AUTOMATIC DIAGNOSTICS STARTED','','Page load; no test controls required');

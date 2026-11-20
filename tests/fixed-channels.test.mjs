@@ -859,7 +859,7 @@ test('V6.14: beep test waits for suspended audio context without opening a micro
   assert.equal(a.toneStarts.length,1);
   assert.equal(a.mediaRequests.length,0);
   const report=a.diagnosticReport();
-  assert.match(report,/Relay One V6.17 global diagnostics/);
+  assert.match(report,/Relay One V6.18 global diagnostics/);
   assert.match(report,/TONE REQUEST/);
   assert.match(report,/TONE SCHEDULED/);
   assert.match(report,/Tone requests: 1; scheduled: 1/);
@@ -964,9 +964,35 @@ test('V6.17: receiver and coordinator record remote talk control without callsig
   assert.doesNotMatch(c.diagnosticReport(),/Secret Coordinator|Secret Transmitter|Secret Receiver/);
   for(const x of [b,c,a])x.leaveChannel(room.id);
 });
-test('V6.17: internet reachability is opt-in and exports success/failure without raw errors',async()=>{
+test('V6.18: automatic reachability runs from page load and exports result without raw errors',async()=>{
   let calls=0;const a=browser('Probe',[],true,{fetch:async()=>{calls++;if(calls===2)throw Error('private error text');return {ok:true,status:200,text:async()=> 'relay-one-reachable'};}});
-  assert.equal(calls,0);await a.checkInternetReachability();assert.match(a.diagnosticReport(),/HTTPS same-site OK/);
+  flush();await Promise.resolve();await Promise.resolve();await Promise.resolve();
+  assert.equal(calls,1);assert.match(a.diagnosticReport(),/HTTPS same-site OK/);
   await a.checkInternetReachability();assert.match(a.diagnosticReport(),/HTTPS same-site failed/);
   assert.doesNotMatch(a.diagnosticReport(),/private error text/);assert.equal(calls,2);
+  assert.match(a.diagnosticReport(),/Automatic capture: active from page load/);
+});
+test('V6.18: signaling disconnect bursts never reconnect synchronously and recovery is throttled',async()=>{
+  const room=presets.CHANNEL_PRESETS[0],a=browser('Recovery',[]);
+  await a.joinChannel(room);flush();
+  const s=a.sessions.get(room.id),p=s.peer;let attempts=0;
+  p.disconnected=true;p.open=false;p.reconnect=()=>{attempts++;p.emit('disconnected');};
+  for(let i=0;i<50;i++)p.emit('disconnected');
+  assert.equal(attempts,0);
+  s.reconnectSignaling();s.reconnectSignaling();assert.equal(attempts,1);
+  assert.match(a.diagnosticReport(),/suppressed signaling events=50/);
+  assert.match(a.diagnosticReport(),/SIGNALING RECONNECT ATTEMPT/);
+  a.leaveChannel(room.id);
+});
+test('V6.18: offline prevents reconnect and automatic checkpoint is saved on page hide',async()=>{
+  const room=presets.CHANNEL_PRESETS[0],a=browser('Offline',[]);
+  await a.joinChannel(room);flush();
+  const s=a.sessions.get(room.id),p=s.peer;let attempts=0;
+  p.disconnected=true;p.open=false;p.reconnect=()=>attempts++;
+  a.fireWindow('offline');s.reconnectSignaling();assert.equal(attempts,0);
+  a.fireWindow('online');s.reconnectSignaling();assert.equal(attempts,0);
+  a.fireWindow('pagehide');
+  const saved=JSON.parse(a.localStorage.getItem('relay-one.diag-checkpoint.v6.18'));
+  assert.match(saved.report,/Relay One V6.18 global diagnostics/);
+  assert.match(saved.report,/BROWSER OFFLINE/);
 });

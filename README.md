@@ -1,6 +1,10 @@
-# Relay One — Incoming radio and reachability diagnostics (V6.17)
+# Relay One — Automatic global diagnostics and bounded recovery (V6.18)
 
 **Main website:** https://auxz2jz.github.io/Slot-26/
+
+## V6.18 — Automatic capture and bounded recovery
+
+Global diagnostics begins at page load, samples the network even before joining, and automatically probes same-site HTTPS every five seconds while visible. No test start/stop is required. Logs stay on-device, with a bounded checkpoint every 15 seconds and on page hide/offline; export includes the previous page snapshot, not an unlimited history. Clear logs deletes the checkpoint. Automatic model detection is visible; manual metadata remains optional. Browser restrictions still apply. Recovery no longer calls PeerJS reconnect from the disconnect callback; it waits for network stability and uses throttled retries with exponential backoff, per-peer cooldowns, and protection of healthy coordinator links. Recovery attempts, suppressed events, traffic stops and cooldowns are in the GLOBAL report. This is a mitigation, not proof of the modem failure cause. STUN-only remains the default; TURN requires a configured service and credentials and is not enabled here. Previous V6.17: https://auxz2jz.github.io/Slot-26/legacy-v6-17.html.
 
 ## V6.17 — Receive-side disconnect investigation
 
