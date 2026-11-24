@@ -1,5 +1,13 @@
 # Relay One — Automatic global diagnostics and bounded recovery (V6.18)
 
+## V6.18.2 — Manual headset PTT operation (web + Android)
+
+The detected external headset button can now be switched between **Hold to talk** (key down starts; key up stops) and **Toggle** (one button pulse starts; the next stops), without repeating detection. The default automatic mode selection and existing bindings remain intact. The new mode selector stops any active transmission before changing modes and saves the preference. The one automatic Global Diagnostics report records mode changes, key event durations, short synthetic media pulses, and safety stops. The separate **Turn microphone off between transmissions** checkbox controls physical microphone acquisition; "Always ready" means acquired while joined but outgoing track muted while idle. A 143ms MediaPlayPause event does not prove an electrical wiring polarity; a synthetic pulse may make true hold-to-talk impossible without a different hardware input path.
+
+Android APK 0.1.1 loads the same hosted web client and will see this UI change after a page reload. Web and Android continue to use the existing PeerJS cloud signaling and WebRTC. GitHub Pages hosts static files and cannot act as a WebSocket signaling server or TURN relay itself. A fully native Android radio could later share the same signaling and channel protocol through a dedicated server, but that is a separate project stage.
+
+
+
 **Main website:** https://auxz2jz.github.io/Slot-26/
 
 ## V6.18 — Automatic capture and bounded recovery

@@ -1015,3 +1015,32 @@ test('V6.18.1: WebView capture error tries plain audio once and exports micropho
   assert.match(report,/successes: 1/);
   a.leaveChannel(room.id);
 });
+
+test('V6.18.2: short media button can be manually changed from toggle to hold',async()=>{
+  const c=presets.CHANNEL_PRESETS[0],a=browser('Android held headset',[]);
+  await a.joinChannel(c);flush();const session=a.sessions.get(c.id);
+  a.ui.hardwareLearn.listeners.click[0]();buttonPulse(a,{hold:143});
+  assert.equal(a.ui.hardwareMode.value,'toggle');
+  a.ui.hardwareEnabled.checked=true;a.ui.hardwareEnabled.listeners.change[0]();
+  a.ui.hardwareMode.value='hold';a.ui.hardwareMode.listeners.change[0]();
+  assert.match(a.hardwareDiagnosticReport(),/configured mode: hold/);
+  a.fireWindow('keydown',{key:'MediaPlayPause',code:'',timeStamp:3000});flush();
+  assert.equal(session.track.enabled,true,'the button-down event begins sending');
+  a.fireWindow('keyup',{key:'MediaPlayPause',code:'',timeStamp:3900});flush();
+  assert.equal(session.track.enabled,false,'button release stops sending');
+  assert.match(a.hardwareDiagnosticReport(),/last pulse duration: 900ms/);
+  assert.match(a.diagnosticReport(),/PTT MODE CHANGED/);
+  a.leaveChannel(c.id);
+});
+test('V6.18.2: manual mode switch while actively transmitting fails closed',async()=>{
+  const c=presets.CHANNEL_PRESETS[0],a=browser('Safe mode change',[]);
+  await a.joinChannel(c);flush();const s=a.sessions.get(c.id);
+  a.ui.hardwareLearn.listeners.click[0]();buttonPulse(a,{hold:143});
+  a.ui.hardwareEnabled.checked=true;a.ui.hardwareEnabled.listeners.change[0]();
+  buttonPulse(a,{t:1000});assert.equal(s.transmitting,true);
+  a.ui.hardwareMode.value='hold';a.ui.hardwareMode.listeners.change[0]();
+  assert.equal(s.transmitting,false,'changing button mode must stop an active radio');
+  assert.match(a.diagnosticReport(),/PTT MODE CHANGED/);
+  assert.equal(a.ui.hardwareMode.value,'hold');
+  a.leaveChannel(c.id);
+});

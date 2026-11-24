@@ -36,6 +36,7 @@ const ui = {
   pttOnlyMicrophone:$('pttOnlyMicrophone'),pttReadyCue:$('pttReadyCue'),testReadyCue:$('testReadyCue'),micModeStatus:$('micModeStatus'),micDelayStatus:$('micDelayStatus'),
   radioConnectionState:$('radioConnectionState'),radioMicState:$('radioMicState'),radioTxState:$('radioTxState'),
   hardwareLearn:$('hardwareLearn'),hardwareClear:$('hardwareClear'),hardwareEnabled:$('hardwareEnabled'),
+  hardwareMode:$('hardwareMode'),hardwareModeHelp:$('hardwareModeHelp'),
   hardwareStatus:$('hardwareStatus'),hardwareLog:$('hardwareLog'),hardwareStop:$('hardwareStop'),
   hardwareAudioCheck:$('hardwareAudioCheck'),hardwareAudioStatus:$('hardwareAudioStatus'),hardwareCopy:$('hardwareCopy'),
   transcriptEnabled:$('transcriptEnabled'),transcriptKeep:$('transcriptKeep'),
@@ -188,7 +189,7 @@ let externalBinding=typeof savedExternal?.binding==='string'&&/^(code|key):[A-Za
 let externalMode=savedExternal?.mode==='toggle'?'toggle':'hold';
 let externalEnabled=Boolean(externalBinding&&savedExternal?.enabled===true);
 let externalSession=null,externalWatchdog=null,externalLearning=false,externalLearnTimer=null;
-let externalDown=null,externalPressedAt=0,externalMessage='',externalNeedsRelease=false;
+let externalDown=null,externalPressedAt=0,externalLivePressedAt=0,externalLastPulseMs=null,externalShortPulses=0,externalLivePulses=0,externalMessage='',externalNeedsRelease=false;
 let quickHeadsetLearning=false;
 let externalDeviceSummary='Not checked';
 const externalEvents=[],externalCounts={testDown:0,testUp:0,unknown:0,press:0,release:0,timeout:0};
@@ -1666,6 +1667,13 @@ function renderExternalPTT(){
   if(ui.hardwareLearn)ui.hardwareLearn.textContent=externalLearning?'Stop detection':'Detect headset button';
   if(ui.hardwareClear)ui.hardwareClear.disabled=!externalBinding&&!externalLearning;
   if(ui.hardwareEnabled){ui.hardwareEnabled.checked=externalEnabled;ui.hardwareEnabled.disabled=!externalBinding||externalLearning;}
+  if(ui.hardwareMode){
+    ui.hardwareMode.value=externalMode;
+    ui.hardwareMode.disabled=!externalBinding||externalLearning;
+  }
+  if(ui.hardwareModeHelp)ui.hardwareModeHelp.textContent=externalMode==='hold'?
+    'Hold-to-talk: the radio transmits only between a keydown and matching keyup. If your headset reports a short synthetic MediaPlayPause pulse instead of a sustained hold, Talk will end immediately.':
+    'Toggle: one media-button pulse starts Talk, another stops it. This is useful for headsets that do not report the physical held state.';
   if(ui.hardwareStop)ui.hardwareStop.disabled=!externalSession;
   if(ui.hardwareStatus)ui.hardwareStatus.textContent=externalMessage||
     (externalBinding?(externalEnabled?'Enabled: ':'Bound, disabled: ')+externalLabel(externalBinding)+(externalMode==='toggle'?'. Press once to start, again to stop.':'. Hold and release your headset button.'):'No external button configured.');
@@ -1728,6 +1736,17 @@ function setExternalEnabled(enabled){
   externalEnabled=Boolean(enabled&&externalBinding);externalNeedsRelease=false;
   saveExternalPTT();externalMessage='';externalEvent('PTT SETTING',externalEnabled?'enabled':'disabled');
 }
+function setExternalMode(mode){
+  if(!externalBinding||externalLearning||!['hold','toggle'].includes(mode)){
+    renderExternalPTT();return;
+  }
+  if(externalSession)stopExternalPTT('Headset button mode changed; transmission stopped.');
+  externalNeedsRelease=false;
+  externalMode=mode;
+  saveExternalPTT();
+  externalMessage=mode==='hold'?'Hold the physical button to Talk; release to stop.':'Tap the button once to start Talk, and again to stop.';
+  externalEvent('PTT MODE CHANGED',mode+'; manual choice; key-pulse durations recorded in Global Diagnostics');
+}
 function externalKeyDown(e){
   if(e.isComposing||e.defaultPrevented||document.hidden)return;
   const sig=hardwareSignature(e);
@@ -1747,6 +1766,7 @@ function externalKeyDown(e){
   consumeHardwareKey(e);
   if(e.repeat||externalNeedsRelease)return;
   externalNeedsRelease=true;
+  externalLivePressedAt=externalEventTime(e);
   if(externalSession){
     if(externalMode==='toggle')stopExternalPTT('External toggle pressed again; transmission stopped.');
     return;
@@ -1783,6 +1803,7 @@ function externalKeyUp(e){
       // MediaPlayPause is a synthetic pulse on the tested Android headset.
       // Automatically classify it as toggle even if another device reports a longer pulse.
       externalMode=held<EXTERNAL_MIN_TEST_HOLD||/MediaPlayPause|HeadsetHook/i.test(sig)?'toggle':'hold';
+      externalEvent('AUTO MODE SELECTION',externalMode+'; detected key pulse '+held+'ms; can be overridden in settings');
       const autoEnable=quickHeadsetLearning;
       externalBinding=sig;externalEnabled=false;externalNeedsRelease=false;
       saveExternalPTT();
@@ -1793,7 +1814,15 @@ function externalKeyUp(e){
     return;
   }
   if(sig&&sig===externalBinding&&externalEnabled){
-    consumeHardwareKey(e);externalNeedsRelease=false;
+    consumeHardwareKey(e);
+    if(externalNeedsRelease){
+      const held=Math.round(Math.max(0,externalEventTime(e)-externalLivePressedAt));
+      externalLivePulses++;
+      externalLastPulseMs=held;
+      if(held<EXTERNAL_MIN_TEST_HOLD)externalShortPulses++;
+      externalEvent('KEY PULSE',externalLabel(sig)+'; keydown-to-keyup='+held+'ms; configured='+externalMode+(held<EXTERNAL_MIN_TEST_HOLD?'; short synthetic pulse possible':''));
+    }
+    externalNeedsRelease=false;
     if(externalMode==='hold')stopExternalPTT('External button released.');
   }
 }
@@ -1827,6 +1856,8 @@ function hardwareDiagnosticReport(){
     'Detected binding: '+externalLabel(externalBinding),
     'External button mode: '+(externalBinding?externalMode:'not detected'),'External timeout: '+EXTERNAL_MAX_SECONDS+' seconds',
     'External PTT enabled: '+externalEnabled,'External PTT held: '+Boolean(externalSession),
+    'Current button mode manually adjustable: yes; configured mode: '+externalMode,
+    'Recent actual key pulses: '+externalLivePulses+'; short pulses (<250ms): '+externalShortPulses+'; last pulse duration: '+(externalLastPulseMs??'not measured')+'ms; pulse timing describes browser key events, NOT physical switch polarity',
     'Test presses: '+externalCounts.testDown,'Test releases: '+externalCounts.testUp,
     'Unidentified events: '+externalCounts.unknown,
     'Live external presses: '+externalCounts.press,'Live external releases: '+externalCounts.release,
@@ -1849,6 +1880,7 @@ ui.quickHeadset?.addEventListener('click',()=>{
 ui.hardwareLearn?.addEventListener('click',startExternalDetection);
 ui.hardwareClear?.addEventListener('click',resetExternalBinding);
 ui.hardwareEnabled?.addEventListener('change',()=>setExternalEnabled(ui.hardwareEnabled.checked));
+ui.hardwareMode?.addEventListener('change',()=>setExternalMode(ui.hardwareMode.value));
 ui.hardwareAudioCheck?.addEventListener('click',()=>{void checkExternalAudio();});
 ui.hardwareCopy?.addEventListener('click',async()=>{
   const report=diagnosticReport();

@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="./styles.css?v=4.1.0">
 <link rel="stylesheet" href="./multi.css?v=6.18.0">
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
-<script type="module" src="./multi-radio.js?v=6.18.1"></script>
+<script type="module" src="./multi-radio.js?v=6.18.2"></script>
 </head>
 <body>
 <main class="app multi-app">
@@ -177,9 +177,15 @@
         <button id="hardwareClear" type="button" class="secondary">Clear detection</button>
       </div>
       <label class="setting-toggle" for="hardwareEnabled"><input id="hardwareEnabled" type="checkbox" disabled> <strong>Enable headset PTT</strong></label>
+      <label for="hardwareMode">Headset button behavior</label>
+      <select id="hardwareMode" disabled>
+        <option value="hold">Hold to talk — release to stop</option>
+        <option value="toggle">Toggle — press once to start, again to stop</option>
+      </select>
+      <p id="hardwareModeHelp" class="small muted">Detect a headset button first, then choose how it controls transmission.</p>
       <p id="hardwareStatus" class="small" role="status" aria-live="polite">No external button detected.</p>
       <button id="hardwareStop" type="button" class="secondary hardware-stop" disabled>STOP EXTERNAL TRANSMISSION</button>
-      <p class="small muted">Genuine held keyboard buttons act like the touchscreen. Short media pulses use press-on / press-off, because Android does not expose their true held state. External transmissions stop after 30 seconds or when the page loses focus. The touchscreen Talk button also stops a toggled transmission.</p>
+      <p class="small muted">The app initially selects a mode from detected key-event timing. You can override it above. If a physical hold produces only a brief MediaPlayPause pulse, Android is not reporting the switch's actual held state: Hold mode will stop almost immediately. Use Toggle in that case; a software setting cannot reverse the electrical behavior of a headset microphone. External transmissions stop after 30 seconds or when the page loses focus. The touchscreen Talk button also stops a toggled transmission.</p>
       <div class="hardware-ptt-buttons">
         <button id="hardwareAudioCheck" type="button" class="secondary">Check audio devices</button>
         <button id="hardwareCopy" type="button" class="secondary">Copy global diagnostics</button>
