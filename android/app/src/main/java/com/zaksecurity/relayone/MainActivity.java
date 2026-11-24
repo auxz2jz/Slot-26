@@ -217,7 +217,7 @@ public final class MainActivity extends Activity {
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         // Physical headset hook / some programmable buttons only. No volume hijacking.
         int k = event.getKeyCode();
-        if (k == KeyEvent.KEYCODE_HEADSETPHOOK || k == KeyEvent.KEYCODE_BUTTON_1) {
+        if (k == KeyEvent.KEYCODE_HEADSETHOOK || k == KeyEvent.KEYCODE_BUTTON_1) {
             if (browser != null && event.getRepeatCount() == 0) {
                 String kind = event.getAction() == KeyEvent.ACTION_DOWN ? "keydown" :
                               event.getAction() == KeyEvent.ACTION_UP ? "keyup" : "";
@@ -298,8 +298,16 @@ public final class MainActivity extends Activity {
                      : type == TelephonyManager.NETWORK_TYPE_UNKNOWN ? "unknown" : "other (" + type + ")";
                 if (Build.VERSION.SDK_INT >= 29) {
                     try {
-                        int dbm = tm.getSignalStrength() == null ? 0 : tm.getSignalStrength().getDbm();
-                        if (dbm >= -160 && dbm <= -20) signal = dbm + " dBm";
+                        android.telephony.SignalStrength strength = tm.getSignalStrength();
+                        if (strength != null) {
+                            for (android.telephony.CellSignalStrength cell : strength.getCellSignalStrengths()) {
+                                int dbm = cell.getDbm();
+                                if (dbm >= -160 && dbm <= -20) {
+                                    signal = dbm + " dBm (" + cell.getClass().getSimpleName() + ")";
+                                    break;
+                                }
+                            }
+                        }
                     } catch (SecurityException ignored) { signal = "restricted by Android"; }
                 }
             }
