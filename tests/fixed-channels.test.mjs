@@ -139,7 +139,13 @@ function browser(name,rooms,speechSupported=true,options={}){
   const localStorage={getItem:k=>data.get(k)||null,setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)};
   const mediaRequests=[];
   let resolveNextMic=null;
-  const navigator={mediaDevices:{getUserMedia:()=>options.deferMic?new Promise(resolve=>{
+  let simulatedMicFailure=false;
+  const navigator={mediaDevices:{getUserMedia:()=>{
+    if(options.firstMicNotReadable && !simulatedMicFailure){
+      simulatedMicFailure=true;
+      return Promise.reject(Object.assign(new Error('Could not start audio source'),{name:'NotReadableError'}));
+    }
+    return options.deferMic?new Promise(resolve=>{
       resolveNextMic=()=>{const t=track();mediaRequests.push(t);resolve(new FakeStream([t]));};
     }):Promise.resolve((()=>{const t=track();mediaRequests.push(t);return new FakeStream([t]);})())},
     clipboard:{writeText:async()=>{}}};
@@ -995,4 +1001,16 @@ test('V6.18: offline prevents reconnect and automatic checkpoint is saved on pag
   const saved=JSON.parse(a.localStorage.getItem('relay-one.diag-checkpoint.v6.18'));
   assert.match(saved.report,/Relay One V6.18 global diagnostics/);
   assert.match(saved.report,/BROWSER OFFLINE/);
+});
+
+test('V6.18.1: WebView capture error tries plain audio once and exports microphone diagnostics',async()=>{
+  const room=presets.CHANNEL_PRESETS[0],a=browser('WebView mic',[],true,{firstMicNotReadable:true});
+  await a.joinChannel(room);flush();
+  assert.ok(a.sessions.has(room.id),'fallback mic capture should allow joining');
+  const report=a.diagnosticReport();
+  assert.match(report,/MICROPHONE SOURCE FAILURE/);
+  assert.match(report,/NotReadableError/);
+  assert.match(report,/plain audio fallbacks: 1/);
+  assert.match(report,/successes: 1/);
+  a.leaveChannel(room.id);
 });
