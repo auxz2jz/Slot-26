@@ -321,7 +321,8 @@ public final class MainActivity extends Activity {
     }
     private String safe(String value, int size) {
         if (value == null) return "";
-        return value.replaceAll("[^A-Za-z0-9 ._()+-]", "").substring(0, Math.min(size, value.length()));
+        String cleaned = value.replaceAll("[^A-Za-z0-9 ._()+-]", "");
+        return cleaned.substring(0, Math.min(size, cleaned.length()));
     }
     private String now() {
         return new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ", Locale.US).format(new Date());
