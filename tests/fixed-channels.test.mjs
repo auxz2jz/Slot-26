@@ -215,6 +215,7 @@ function browser(name,rooms,speechSupported=true,options={}){
     MediaRecorder:options.local?FakeRecorder:undefined,
     AudioContext:options.local||options.pttMic?FakeAudioContext:undefined,
     prompt(){return '1234';},confirm(){return true;}};
+  if(options.webview)window.RelayAndroid={getDiagnostics:()=>''};
   const location={href:'https://example.invalid/Slot-26/',pathname:'/Slot-26/',search:''};
   const app=appFactory(...utilityNames.map(k=>utilsForTest[k]),document,window,navigator,
     localStorage,location,{replaceState(){}},FakeStream,URLSearchParams,FakeWorker,
@@ -1004,7 +1005,7 @@ test('V6.18: offline prevents reconnect and automatic checkpoint is saved on pag
 });
 
 test('V6.18.1: WebView capture error tries plain audio once and exports microphone diagnostics',async()=>{
-  const room=presets.CHANNEL_PRESETS[0],a=browser('WebView mic',[],true,{firstMicNotReadable:true});
+  const room=presets.CHANNEL_PRESETS[0],a=browser('WebView mic',[],true,{firstMicNotReadable:true,webview:true});
   await a.joinChannel(room);flush();
   assert.ok(a.sessions.has(room.id),'fallback mic capture should allow joining');
   const report=a.diagnosticReport();

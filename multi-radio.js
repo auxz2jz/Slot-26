@@ -1317,7 +1317,14 @@ const MICROPHONE_CONSTRAINTS={
 };
 const micDiagnostics={attempts:0,success:0,failed:0,plainFallbacks:0,cooldownCount:0,lastFailure:'none',lastSuccess:'none'};
 let micCooldownUntil=0;
-async function acquireRadioMicrophone(purpose){
+function acquireRadioMicrophone(purpose){
+  // Keep the original promise timing on ordinary browsers. Native Android
+  // WebView needs the extra fallback and cooldown compatibility logic.
+  if(typeof window.RelayAndroid==='undefined'){
+    micDiagnostics.attempts++;
+    return navigator.mediaDevices.getUserMedia(MICROPHONE_CONSTRAINTS);
+  }
+  return (async()=>{
   const wait=Math.max(0,micCooldownUntil-Date.now());
   if(wait>0){
     micDiagnostics.cooldownCount++;
@@ -1357,6 +1364,7 @@ async function acquireRadioMicrophone(purpose){
       throw second;
     }
   }
+  })();
 }
 function micStateSummary(){
   if(!pttOnlyMicrophone)return microphone?.getAudioTracks?.()[0]?.readyState==='live'?
