@@ -147,7 +147,7 @@ function browser(name,rooms,speechSupported=true,options={}){
     }
     return options.deferMic?new Promise(resolve=>{
       resolveNextMic=()=>{const t=track();mediaRequests.push(t);resolve(new FakeStream([t]));};
-    }):Promise.resolve((()=>{const t=track();mediaRequests.push(t);return new FakeStream([t]);})())},
+    }):Promise.resolve((()=>{const t=track();mediaRequests.push(t);return new FakeStream([t]);})())}},
     clipboard:{writeText:async()=>{}}};
   const recognitionInstances=[];
   class FakeRecognition{
