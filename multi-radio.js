@@ -1200,7 +1200,7 @@ function diagnosticReport(includePrevious=true){
     'Browser online: '+(navigator.onLine===false?'no':'yes/unknown'),
     'Network effective type: '+kind+' (if available; not cellular signal)',
     'Active channels: '+sessions.size,
-    ...current,'',networkDiagnosticReport(),'',receiveDiagnosticReport(),'','--- Recovery diagnostics ---',...Array.from(sessions.values()).map(s=>s.room.title+'; signal attempts='+s.signalAttempts+'; suppressed signaling events='+s.signalSuppressed+'; session retry attempts='+s.retryAttempts+'; peer cooldowns='+s.dataFailures.size+'; waiting for stable network='+!networkCanRecover()),'','Native Android diagnostics (if installed):',nativeAndroidDiagnosticReport(),'','Recent events:',...diagnosticEvents,'','--- Speech to text ---',speechDiagnosticReport(),'','--- External headset PTT ---',hardwareDiagnosticReport(),...(includePrevious&&previousCheckpoint?['','--- Previous page diagnostic checkpoint (local; not recursive) ---',previousCheckpoint.report]:[])].join('\n');
+    ...current,'',networkDiagnosticReport(),'',receiveDiagnosticReport(),'','--- Recovery diagnostics ---',...Array.from(sessions.values()).map(s=>s.room.title+'; signal attempts='+s.signalAttempts+'; suppressed signaling events='+s.signalSuppressed+'; session retry attempts='+s.retryAttempts+'; peer cooldowns='+s.dataFailures.size+'; waiting for stable network='+!networkCanRecover()),'','--- Microphone source diagnostics ---','Microphone capture requests: '+micDiagnostics.attempts+'; successes: '+micDiagnostics.success+'; failed capture attempts: '+micDiagnostics.failed+'; plain audio fallbacks: '+micDiagnostics.plainFallbacks+'; cooldown suppressions: '+micDiagnostics.cooldownCount+'; microphone source retry after: '+Math.max(0,Math.ceil((micCooldownUntil-Date.now())/1000))+'s; last failure: '+micDiagnostics.lastFailure+'; last success: '+micDiagnostics.lastSuccess,'','Native Android diagnostics (if installed):',nativeAndroidDiagnosticReport(),'','Recent events:',...diagnosticEvents,'','--- Speech to text ---',speechDiagnosticReport(),'','--- External headset PTT ---',hardwareDiagnosticReport(),...(includePrevious&&previousCheckpoint?['','--- Previous page diagnostic checkpoint (local; not recursive) ---',previousCheckpoint.report]:[])].join('\n');
 }
 if(ui.copyDiagnostics)ui.copyDiagnostics.addEventListener('click',async()=>{
   const report=diagnosticReport();
@@ -1315,6 +1315,49 @@ const MICROPHONE_CONSTRAINTS={
   audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},
   video:false
 };
+const micDiagnostics={attempts:0,success:0,failed:0,plainFallbacks:0,cooldownCount:0,lastFailure:'none',lastSuccess:'none'};
+let micCooldownUntil=0;
+async function acquireRadioMicrophone(purpose){
+  const wait=Math.max(0,micCooldownUntil-Date.now());
+  if(wait>0){
+    micDiagnostics.cooldownCount++;
+    logRadio('MICROPHONE RECOVERY HOLD','',purpose+'; '+Math.ceil(wait/1000)+'s until next attempt');
+    throw new Error('Microphone temporarily unavailable; retry in '+Math.ceil(wait/1000)+' seconds');
+  }
+  const reportFailure=(err,mode)=>{
+    // Do not export arbitrary device or OS error text, only a sanitized category.
+    const reason=String(err?.name||'unknown').replace(/[^A-Za-z0-9_-]/g,'').slice(0,36);
+    const message=String(err?.message||'').replace(/[^A-Za-z0-9 ._-]/g,'').slice(0,95);
+    micDiagnostics.failed++;
+    micDiagnostics.lastFailure=purpose+'; '+mode+'; '+reason+'; '+message;
+    logRadio('MICROPHONE SOURCE FAILURE','',micDiagnostics.lastFailure);
+    return reason;
+  };
+  micDiagnostics.attempts++;
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia(MICROPHONE_CONSTRAINTS);
+    micDiagnostics.success++;
+    micDiagnostics.lastSuccess=purpose+'; processed microphone constraints';
+    logRadio('MICROPHONE OPEN','',micDiagnostics.lastSuccess);
+    return stream;
+  }catch(err){
+    const reason=reportFailure(err,'processed constraints');
+    if(['NotAllowedError','PermissionDeniedError','SecurityError'].includes(reason))throw err;
+    micDiagnostics.plainFallbacks++;
+    logRadio('MICROPHONE PLAIN FALLBACK','',purpose+'; audio=true without processing options');
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+      micDiagnostics.success++;micDiagnostics.lastSuccess=purpose+'; plain audio fallback';
+      logRadio('MICROPHONE OPEN','',micDiagnostics.lastSuccess);
+      return stream;
+    }catch(second){
+      reportFailure(second,'plain audio fallback');
+      micCooldownUntil=Date.now()+4000;
+      logRadio('MICROPHONE COOLDOWN','',purpose+'; next retry in 4 seconds');
+      throw second;
+    }
+  }
+}
 function micStateSummary(){
   if(!pttOnlyMicrophone)return microphone?.getAudioTracks?.()[0]?.readyState==='live'?
     'Always ready: microphone open, muted until authorized Talk.':
@@ -1381,7 +1424,7 @@ async function preparePTTMicrophone(session){
   logRadio('PTT MIC REQUEST',session.room.title,'Opening physical microphone');
   // Must be requested directly from the PTT gesture, before awaiting signaling.
   try{
-    const work=navigator.mediaDevices.getUserMedia(MICROPHONE_CONSTRAINTS);
+    const work=acquireRadioMicrophone('PTT activation');
     session.pttMicPending=work;
     renderMicMode();
     const stream=await work;
@@ -1455,7 +1498,7 @@ renderMicMode();
 async function ensureMicrophone(){
   if(microphone && microphone.getAudioTracks()[0]?.readyState==='live')return microphone;
   if(micPromise)return micPromise;
-  micPromise=navigator.mediaDevices.getUserMedia(MICROPHONE_CONSTRAINTS)
+  micPromise=acquireRadioMicrophone('channel join')
     .then(stream=>{
       const source=stream.getAudioTracks()[0];
       if(!source || typeof source.clone!=='function'){stream.getTracks().forEach(x=>x.stop());throw Error('This browser cannot create separate microphone tracks. No channels were connected.');}

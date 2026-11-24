@@ -2,6 +2,7 @@ package com.zaksecurity.relayone;
 
 import android.Manifest;
 import android.app.Activity;
+import android.media.AudioManager;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
@@ -54,6 +55,7 @@ public final class MainActivity extends Activity {
     private static final String TRUSTED_HOST = "auxz2jz.github.io";
     private static final int REQUEST_MIC = 2101;
     private static final int REQUEST_PHONE = 2102;
+    private static final int REQUEST_STARTUP_MIC = 2103;
     private static final int MAX_LOG = 300;
     private static final int MAX_REPORT = 1_800_000;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -68,6 +70,9 @@ public final class MainActivity extends Activity {
     private long startedAt;
     private long lastExportAt;
     private boolean running = true;
+    private AudioManager audioManager;
+    private int originalAudioMode = AudioManager.MODE_NORMAL;
+    private boolean communicationMode = false;
 
     private final Runnable watch = new Runnable() {
         @Override public void run() {
@@ -93,7 +98,21 @@ public final class MainActivity extends Activity {
         startTx = TrafficStats.getUidTxBytes(Process.myUid());
         prefs = getSharedPreferences("relay_diagnostics", MODE_PRIVATE);
         restoreHistory();
-        note("ANDROID APP LAUNCHED", "Version 0.1.0; OS API " + Build.VERSION.SDK_INT);
+        note("ANDROID APP LAUNCHED", "Version 0.1.1; OS API " + Build.VERSION.SDK_INT);
+        // WebView's media renderer must be created AFTER the Android microphone
+        // permission has been decided; some Android 16 WebViews otherwise keep
+        // their initial denial despite a later onPermissionRequest grant.
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            note("STARTUP MICROPHONE PERMISSION", "Requesting before WebView initialization");
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_STARTUP_MIC);
+        } else {
+            initializeRadio();
+        }
+    }
+
+    private void initializeRadio() {
+        if (browser != null) return;
+        setCommunicationMode(true);
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.rgb(8,24,36));
         // API 35 enforces edge-to-edge; keep the radio underneath neither status nor navigation bars.
@@ -200,6 +219,11 @@ public final class MainActivity extends Activity {
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
         boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
+        if (requestCode == REQUEST_STARTUP_MIC) {
+            note("STARTUP MICROPHONE PERMISSION", granted ? "Granted before WebView" : "Denied; receive-only UI may remain available");
+            initializeRadio();
+            return;
+        }
         if (requestCode == REQUEST_MIC) {
             PermissionRequest pr = microphoneRequest;
             microphoneRequest = null;
@@ -240,16 +264,21 @@ public final class MainActivity extends Activity {
 
     @Override public void onPause() {
         if (browser != null) browser.onPause();
+        setCommunicationMode(false);
         note("ANDROID APP BACKGROUND", "WebView audio/timers may pause while backgrounded");
         persistHistory();
         super.onPause();
     }
     @Override public void onResume() {
         super.onResume();
-        if (browser != null) browser.onResume();
+        if (browser != null) {
+            browser.onResume();
+            setCommunicationMode(true);
+        }
         if (prefs != null) note("ANDROID APP FOREGROUND", "Returning to radio");
     }
     @Override public void onDestroy() {
+        setCommunicationMode(false);
         running = false;
         handler.removeCallbacksAndMessages(null);
         if (browser != null) {
@@ -260,6 +289,25 @@ public final class MainActivity extends Activity {
         }
         persistHistory();
         super.onDestroy();
+    }
+
+    private void setCommunicationMode(boolean active) {
+        try {
+            if (audioManager == null) audioManager = (AudioManager)getSystemService(AUDIO_SERVICE);
+            if (audioManager == null) return;
+            if (active && !communicationMode) {
+                originalAudioMode = audioManager.getMode();
+                audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                communicationMode = true;
+                note("ANDROID AUDIO MODE", "Communication mode activated for WebRTC");
+            } else if (!active && communicationMode) {
+                audioManager.setMode(originalAudioMode);
+                communicationMode = false;
+                note("ANDROID AUDIO MODE", "Prior system audio mode restored");
+            }
+        } catch (Exception e) {
+            note("ANDROID AUDIO MODE ERROR", e.getClass().getSimpleName());
+        }
     }
 
     private String networkSummary() {
@@ -354,9 +402,14 @@ public final class MainActivity extends Activity {
     }
     private synchronized String nativeReport() {
         StringBuilder b = new StringBuilder();
-        b.append("Native app: Relay One 0.1.0; Android API ").append(Build.VERSION.SDK_INT)
+        b.append("Native app: Relay One 0.1.1; Android API ").append(Build.VERSION.SDK_INT)
          .append("; manufacturer=").append(safe(Build.MANUFACTURER, 50))
          .append("; model=").append(safe(Build.MODEL, 60)).append('\n')
+         .append("Android communication audio mode requested: ").append(communicationMode)
+         .append("; current audio mode=").append(audioManager == null ? "unavailable" : audioManager.getMode())
+         .append("; MODIFY_AUDIO_SETTINGS granted=")
+         .append(checkSelfPermission(Manifest.permission.MODIFY_AUDIO_SETTINGS) == PackageManager.PERMISSION_GRANTED)
+         .append('\n')
          .append("Current network: ").append(networkSummary()).append('\n')
          .append("Current telephony: ").append(telephonySummary()).append('\n')
          .append("Current app data: ").append(trafficSummary()).append('\n')

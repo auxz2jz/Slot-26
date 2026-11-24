@@ -1,10 +1,13 @@
-# Relay One Android APK (V6.18 radio, Android 0.1.0)
+# Relay One Android APK (V6.18 radio, Android 0.1.1)
 
 ## What this is
 
 This Android project packages the **existing live Relay One web radio** at https://auxz2jz.github.io/Slot-26/ in a dedicated, microphone-enabled Android WebView. It does not replace the shared PeerJS signaling protocol, channel names, PINs, audio messages or existing UI. Basic/Advanced channels, scan, monitor, PTT, tones, captions (subject to WebView support), headset controls (where Android supplies key events), and all one-report diagnostics continue to use the live website.
 
 This app is **network-dependent**. It is not a bundled offline clone. Updates to the GitHub Pages radio appear in the APK when it loads online. Android System WebView must be installed and up to date.
+
+## 0.1.1 microphone compatibility fix
+When microphone access is not yet allowed, Android asks for that runtime permission **before** constructing WebView, avoiding a permission-state initialization problem on some versions of Android System WebView. The native app now declares MODIFY_AUDIO_SETTINGS and activates Android communication audio mode while foregrounded, restoring the previous mode when backgrounded. Browser code records the exact categorized getUserMedia error, tries plain audio capture once when processed constraints fail, and throttles repeated failures. All new events appear in the same automatic Global Diagnostics report.
 
 ## Android native additions
 

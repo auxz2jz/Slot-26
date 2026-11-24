@@ -44,9 +44,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="android-v0.1.0"
+          tag="android-v0.1.1"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists. Kept existing APK signature and artifact."
           else
-            gh release create "$tag"               'android/app/build/outputs/apk/debug/app-debug.apk#Relay-One-v0.1.0.apk'               --target "${{ github.sha }}"               --title "Relay One Android APK v0.1.0"               --notes "Android WebView wrapper for the live Relay One V6.18 radio. Debug-signed APK for testing. May require uninstall before a differently signed future build. WebRTC and microphone require internet and Android permission."
+            gh release create "$tag"               'android/app/build/outputs/apk/debug/app-debug.apk#Relay-One-v0.1.1.apk'               --target "${{ github.sha }}"               --title "Relay One Android APK v0.1.1"               --notes "Android v0.1.1 test build: request microphone permission before initializing WebView, grant MODIFY_AUDIO_SETTINGS, use communication audio routing, and add microphone capture fallback diagnostics. Debug-signed with ephemeral key; uninstall earlier versions if Android rejects an update."
           fi
