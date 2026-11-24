@@ -1092,6 +1092,15 @@ function recordNetworkSample(at,lines){
   if(netTimeline.length>NET_ROWS_LIMIT)netTimeline.shift();
   if(ui.diagNetStatus)ui.diagNetStatus.textContent='Automatic capture active; model='+netModel+'; '+connectionSnapshot()+'; '+netSampleCount+' snapshots, '+lines.length+' link reports in latest sample';
 }
+function nativeAndroidDiagnosticReport(){
+  try{
+    if(typeof window.RelayAndroid?.getDiagnostics==='function'){
+      const details=String(window.RelayAndroid.getDiagnostics()||'').slice(0,60000);
+      return '--- Native Android app diagnostics ---\n'+details;
+    }
+  }catch{return '--- Native Android app diagnostics ---\nNative data unavailable (bridge error)';}
+  return 'Native Android app diagnostics: browser-only session';
+}
 function networkDiagnosticReport(){
   return ['--- Device and cellular / WebRTC diagnostics ---',
     'Diagnostic start UTC: '+new Date(netClockStart).toISOString(),
@@ -1131,6 +1140,14 @@ function initNetworkDiagnostics(){
   window.addEventListener('pagehide',()=>networkStateChanged('PAGE HIDE'));
 }
 ui.downloadDiagnostics?.addEventListener('click',()=>{
+  // Native app exports the same global report directly to Android Downloads.
+  if(typeof window.RelayAndroid?.saveDiagnostics==='function'){
+    try{
+      window.RelayAndroid.saveDiagnostics(diagnosticReport());
+      setMessage('Saving the global report to Android Downloads…');
+      return;
+    }catch{ /* Fall back to normal browser download. */ }
+  }
   try{
     const report=diagnosticReport(),blob=new Blob([report],{type:'text/plain;charset=utf-8'});
     const url=URL.createObjectURL(blob),a=document.createElement('a');
@@ -1183,7 +1200,7 @@ function diagnosticReport(includePrevious=true){
     'Browser online: '+(navigator.onLine===false?'no':'yes/unknown'),
     'Network effective type: '+kind+' (if available; not cellular signal)',
     'Active channels: '+sessions.size,
-    ...current,'',networkDiagnosticReport(),'',receiveDiagnosticReport(),'','--- Recovery diagnostics ---',...Array.from(sessions.values()).map(s=>s.room.title+'; signal attempts='+s.signalAttempts+'; suppressed signaling events='+s.signalSuppressed+'; session retry attempts='+s.retryAttempts+'; peer cooldowns='+s.dataFailures.size+'; waiting for stable network='+!networkCanRecover()),'','Recent events:',...diagnosticEvents,'','--- Speech to text ---',speechDiagnosticReport(),'','--- External headset PTT ---',hardwareDiagnosticReport(),...(includePrevious&&previousCheckpoint?['','--- Previous page diagnostic checkpoint (local; not recursive) ---',previousCheckpoint.report]:[])].join('\n');
+    ...current,'',networkDiagnosticReport(),'',receiveDiagnosticReport(),'','--- Recovery diagnostics ---',...Array.from(sessions.values()).map(s=>s.room.title+'; signal attempts='+s.signalAttempts+'; suppressed signaling events='+s.signalSuppressed+'; session retry attempts='+s.retryAttempts+'; peer cooldowns='+s.dataFailures.size+'; waiting for stable network='+!networkCanRecover()),'','Native Android diagnostics (if installed):',nativeAndroidDiagnosticReport(),'','Recent events:',...diagnosticEvents,'','--- Speech to text ---',speechDiagnosticReport(),'','--- External headset PTT ---',hardwareDiagnosticReport(),...(includePrevious&&previousCheckpoint?['','--- Previous page diagnostic checkpoint (local; not recursive) ---',previousCheckpoint.report]:[])].join('\n');
 }
 if(ui.copyDiagnostics)ui.copyDiagnostics.addEventListener('click',async()=>{
   const report=diagnosticReport();
